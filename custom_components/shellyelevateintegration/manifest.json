@@ -29,7 +29,7 @@
   "requirements": [
     "adb-shell[async]>=0.4.4"
   ],
-  "version": "0.1.1",
+  "version": "0.1.2",
   "zeroconf": [
     "_shellyelevate._tcp.local.",
     {
