@@ -1,0 +1,767 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Shelly Wall Display hinzufügen",
+        "description": "Gib die Adresse eines Shelly Wall Displays mit ShellyElevate ein. Um ShellyElevate auf einem neuen Display zu installieren, öffne **Shelly Elevate** in der Seitenleiste und wechsle zu **Install**.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        },
+        "data_description": {
+          "host": "IP-Adresse oder Hostname des Displays.",
+          "port": "Port der ShellyElevate-API (Standard 8443). Ältere App-Versionen werden automatisch auf Port 8080 gefunden."
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "{name} gefunden",
+        "description": "Möchtest du das {model} **{name}** ({host}) hinzufügen? Auf dem Display wird ein Kopplungscode angezeigt."
+      },
+      "pair": {
+        "title": "Mit {name} koppeln",
+        "description": "Gib den 6-stelligen Code ein, der jetzt auf dem Display angezeigt wird.",
+        "data": {
+          "code": "Kopplungscode"
+        }
+      },
+      "legacy_confirm": {
+        "title": "Ältere ShellyElevate-Version",
+        "description": "**{name}** ({host}) läuft mit einer älteren ShellyElevate-Version ohne native Home Assistant-API. Das Gerät kann mit Grundfunktionen hinzugefügt werden (Relais, Sensoren, Einstellungen, Medienwiedergabe ohne Status), aber seine HTTP-API hat keine Authentifizierung. Aktualisiere die App später, um Push-Updates, den Sprachassistenten und den Bluetooth-Proxy zu erhalten."
+      },
+      "profile": {
+        "title": "Einstellungsprofil anwenden",
+        "description": "Wende eines deiner Einstellungsprofile auf das neue Display an. Das Standardprofil ist vorausgewählt.",
+        "data": {
+          "profile": "Profil"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Erneut mit {name} koppeln",
+        "description": "Das Display akzeptiert das gespeicherte Token nicht mehr oder zeigt ein anderes Sicherheitszertifikat (zum Beispiel nach einer Neuinstallation der App). Kopple es erneut, um fortzufahren. Auf dem Display wird ein Kopplungscode angezeigt."
+      },
+      "reconfigure": {
+        "title": "Adresse des Displays ändern",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      },
+      "upgrade_confirm": {
+        "title": "{name} auf die neue API umstellen",
+        "description": "Auf **{name}** ({host}) läuft jetzt eine ShellyElevate-Version mit nativer Home Assistant-API. Kopple das Display, um Authentifizierung, Push-Updates, den Sprachassistenten und den Bluetooth-Proxy zu erhalten. Auf dem Display wird ein Kopplungscode angezeigt."
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Display fehlgeschlagen.",
+      "invalid_code": "Ungültiger Kopplungscode. Prüfe den Code auf dem Display.",
+      "pairing_expired": "Der Code ist abgelaufen. Auf dem Display wird jetzt ein neuer Code angezeigt.",
+      "profile_failed": "Das Profil konnte nicht angewendet werden."
+    },
+    "abort": {
+      "already_configured": "Dieses Display ist bereits eingerichtet.",
+      "cannot_connect": "Verbindung zum Display fehlgeschlagen.",
+      "not_shellyelevateintegration": "Dies ist kein ShellyElevate-Display.",
+      "incompatible_api": "Diese ShellyElevate-Version verwendet eine inkompatible API-Version. Aktualisiere die Integration oder die App.",
+      "reauth_successful": "Erfolgreich erneut gekoppelt.",
+      "reconfigure_successful": "Die Adresse wurde aktualisiert.",
+      "wrong_device": "Diese Adresse gehört zu einem anderen Display.",
+      "not_upgraded": "Auf dem Display läuft noch eine ältere ShellyElevate-Version ohne Kopplung.",
+      "upgrade_successful": "Das Display verwendet jetzt die neue API.",
+      "certificate_mismatch": "Das Display zeigt ein anderes Sicherheitszertifikat als das, mit dem Home Assistant gekoppelt wurde. Kopple es erneut."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Shelly Elevate-Optionen",
+        "data": {
+          "relays_as_lights": "Relais als Lichter anzeigen",
+          "auto_backup": "Einstellungen automatisch sichern",
+          "backup_keep": "Anzahl aufzubewahrender Sicherungen",
+          "update_channel": "Update-Kanal",
+          "adb": "ADB verwenden (Port 5555)",
+          "watchdog": "App automatisch neu starten, wenn sie nicht mehr reagiert",
+          "thermostat": "Thermostat erstellen"
+        },
+        "data_description": {
+          "auto_backup": "Erstellt nach jeder Änderung eine Momentaufnahme der Display-Einstellungen.",
+          "adb": "Ermöglicht Home Assistant, die App per ADB zu installieren und zu aktualisieren, Screenshots zu erstellen und das Display zu retten. ADB über WLAN muss auf dem Display aktiviert bleiben.",
+          "watchdog": "Erfordert „ADB verwenden“.",
+          "thermostat": "Erstellt eine Thermostat-Entität, die ein Relais des Displays nach der Temperatur schaltet.",
+          "backup_keep": "Ältere automatische Sicherungen werden zuerst entfernt; benannte Sicherungen werden am längsten aufbewahrt."
+        }
+      },
+      "thermostat": {
+        "title": "Thermostat",
+        "description": "Die Regelung läuft in Home Assistant. Ohne Auswahl wird der Temperatursensor des Displays verwendet.",
+        "data": {
+          "thermostat_relay": "Relais",
+          "thermostat_sensor": "Temperatursensor",
+          "thermostat_mode": "Modus",
+          "thermostat_tolerance": "Toleranz",
+          "thermostat_min_cycle": "Minimale Schaltdauer",
+          "thermostat_min_temp": "Minimale Zieltemperatur",
+          "thermostat_max_temp": "Maximale Zieltemperatur"
+        },
+        "data_description": {
+          "thermostat_relay": "Relais, das Heizung oder Kühlung schaltet.",
+          "thermostat_sensor": "Leer lassen, um den Sensor des Displays zu verwenden.",
+          "thermostat_tolerance": "Das Relais schaltet bei Zieltemperatur ± Toleranz.",
+          "thermostat_min_cycle": "Mindestzeit zwischen zwei Schaltvorgängen (0 = aus)."
+        }
+      }
+    },
+    "error": {
+      "invalid_temp_range": "Die minimale Temperatur muss kleiner als die maximale sein.",
+      "no_relays": "Dieses Display hat kein Relais zum Schalten und kann daher kein Thermostat sein.",
+      "sensor_required": "Dieses Display hat keinen Temperatursensor. Wähle einen Temperatursensor aus."
+    }
+  },
+  "selector": {
+    "update_channel": {
+      "options": {
+        "stable": "Stabil",
+        "beta": "Beta (Vorabversionen)"
+      }
+    },
+    "thermostat_mode": {
+      "options": {
+        "heat": "Heizen",
+        "cool": "Kühlen"
+      }
+    }
+  },
+  "issues": {
+    "legacy_app": {
+      "title": "{name} läuft mit einer älteren ShellyElevate-Version",
+      "description": "Push-Updates, Tasten und Gesten, der Sprachassistent, der Bluetooth-Proxy und der Medienstatus erfordern eine ShellyElevate-Version mit nativer API. Aktualisiere die App auf dem Display (zum Beispiel über die Update-Entität)."
+    },
+    "duplicate_devices": {
+      "title": "{name} erscheint zusätzlich als zweites Gerät",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Doppelte Integrationen auf {name} deaktivieren",
+            "description": "MQTT-Discovery, der ESPHome-kompatible Bluetooth-Proxy oder beide sind auf dem Display aktiviert. Sie erzeugen ein zweites Home Assistant-Gerät für dasselbe Display. Diese Integration bietet bereits alles, daher werden sie deaktiviert. Anschließend kannst du das alte MQTT-/ESPHome-Gerät löschen."
+          }
+        },
+        "abort": {
+          "not_loaded": "Das Display ist nicht verbunden."
+        }
+      }
+    },
+    "legacy_http_api": {
+      "title": "Nicht authentifizierte Legacy-API auf {name} aktiviert",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Legacy-HTTP-API auf {name} deaktivieren",
+            "description": "Mit der Legacy-HTTP-API kann jeder in deinem Netzwerk das Display ohne Passwort steuern. Diese Integration benötigt sie nicht."
+          }
+        },
+        "abort": {
+          "not_loaded": "Das Display ist nicht verbunden."
+        }
+      }
+    },
+    "app_unreachable": {
+      "title": "ShellyElevate auf {name} reagiert nicht",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "{name} retten",
+            "description": "Die App reagiert nicht, aber das Display ist per ADB erreichbar. Starte die App neu oder installiere sie erneut.",
+            "data": {
+              "reinstall": "App neu installieren"
+            }
+          }
+        },
+        "abort": {
+          "not_loaded": "Das Display ist nicht eingerichtet.",
+          "no_adb": "ADB ist für dieses Display nicht aktiviert."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "screen_on": {
+        "name": "Bildschirm an"
+      },
+      "voice_muted": {
+        "name": "Mikrofon stummgeschaltet"
+      },
+      "input": {
+        "name": "Eingang {index}"
+      },
+      "input_single": {
+        "name": "Eingang"
+      }
+    },
+    "button": {
+      "restart_app": {
+        "name": "App neu starten"
+      },
+      "reload_dashboard": {
+        "name": "Dashboard neu laden"
+      },
+      "wake": {
+        "name": "Bildschirm aufwecken"
+      },
+      "sleep": {
+        "name": "Bildschirm in Ruhezustand"
+      },
+      "take_screenshot": {
+        "name": "Screenshot aufnehmen"
+      },
+      "backup_settings": {
+        "name": "Einstellungen sichern"
+      }
+    },
+    "event": {
+      "button": {
+        "name": "Taste {index}",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "single": "Einfacher Druck",
+              "double": "Doppelter Druck",
+              "triple": "Dreifacher Druck",
+              "long": "Langer Druck"
+            }
+          }
+        }
+      },
+      "power_button": {
+        "name": "Ein-/Aus-Taste",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "single": "Einfacher Druck",
+              "double": "Doppelter Druck",
+              "triple": "Dreifacher Druck",
+              "long": "Langer Druck"
+            }
+          }
+        }
+      },
+      "swipe": {
+        "name": "Wischen"
+      }
+    },
+    "image": {
+      "screenshot": {
+        "name": "Screenshot"
+      }
+    },
+    "light": {
+      "screen": {
+        "name": "Bildschirm",
+        "state_attributes": {
+          "effect": {
+            "state": {
+              "manual": "Manuelle Helligkeit",
+              "auto_brightness": "Automatische Helligkeit"
+            }
+          }
+        }
+      },
+      "dimmer": {
+        "name": "Dimmer"
+      },
+      "relay": {
+        "name": "Relais {index}"
+      },
+      "relay_single": {
+        "name": "Relais"
+      }
+    },
+    "notify": {
+      "notify": {
+        "name": "Bildschirmnachricht"
+      }
+    },
+    "number": {
+      "screensaver_delay": {
+        "name": "Bildschirmschoner-Verzögerung"
+      },
+      "min_brightness": {
+        "name": "Minimale Helligkeit"
+      },
+      "screensaver_brightness": {
+        "name": "Bildschirmschoner-Helligkeit"
+      },
+      "proximity_keep_awake": {
+        "name": "Wach bleiben nach Annäherung"
+      },
+      "wake_word_sensitivity": {
+        "name": "Empfindlichkeit des Aktivierungsworts"
+      },
+      "voice_max_record": {
+        "name": "Maximale Aufnahmedauer"
+      }
+    },
+    "select": {
+      "screensaver_type": {
+        "name": "Bildschirmschoner",
+        "state": {
+          "off": "Aus",
+          "clock": "Uhr",
+          "clock_date": "Uhr und Datum",
+          "always_on": "Always-on-Display"
+        }
+      },
+      "sleep_optimization": {
+        "name": "Ruhezustandsoptimierung",
+        "state": {
+          "off": "Aus",
+          "balanced": "Ausgewogen",
+          "aggressive": "Aggressiv"
+        }
+      },
+      "pipeline": {
+        "name": "Assistent",
+        "state": {
+          "preferred": "Bevorzugt"
+        }
+      },
+      "vad_sensitivity": {
+        "name": "Erkennung: Sprechen beendet",
+        "state": {
+          "default": "Standard",
+          "aggressive": "Aggressiv",
+          "relaxed": "Entspannt"
+        }
+      }
+    },
+    "sensor": {
+      "proximity": {
+        "name": "Annäherung"
+      },
+      "screen_brightness": {
+        "name": "Bildschirmhelligkeit"
+      },
+      "cpu_temperature": {
+        "name": "CPU-Temperatur"
+      },
+      "memory_free": {
+        "name": "Freier Speicher"
+      },
+      "app_started": {
+        "name": "App gestartet"
+      },
+      "voice_state": {
+        "name": "Sprachassistent",
+        "state": {
+          "idle": "Inaktiv",
+          "listening": "Hört zu",
+          "processing": "Verarbeitet",
+          "responding": "Antwortet",
+          "error": "Fehler",
+          "disabled": "Deaktiviert"
+        }
+      }
+    },
+    "switch": {
+      "relay": {
+        "name": "Relais {index}"
+      },
+      "relay_single": {
+        "name": "Relais"
+      },
+      "night_mode": {
+        "name": "Nachtmodus"
+      },
+      "screensaver": {
+        "name": "Bildschirmschoner aktiviert"
+      },
+      "auto_brightness": {
+        "name": "Automatische Helligkeit"
+      },
+      "wake_on_proximity": {
+        "name": "Bei Annäherung aufwecken"
+      },
+      "touch_to_wake": {
+        "name": "Durch Berührung aufwecken"
+      },
+      "voice_assistant": {
+        "name": "Sprachassistent"
+      },
+      "voice_mute": {
+        "name": "Mikrofon stummschalten"
+      },
+      "wake_word": {
+        "name": "Aktivierungswort-Erkennung"
+      },
+      "bluetooth_proxy": {
+        "name": "Bluetooth-Proxy"
+      },
+      "media_enabled": {
+        "name": "Medienwiedergabe"
+      },
+      "buttons_switch_relays": {
+        "name": "Tasten schalten Relais"
+      },
+      "switch_on_swipe": {
+        "name": "Wischen schaltet Relais"
+      },
+      "legacy_mqtt": {
+        "name": "MQTT"
+      },
+      "legacy_http_api": {
+        "name": "Legacy-HTTP-API"
+      }
+    },
+    "text": {
+      "dashboard_url": {
+        "name": "Dashboard-URL"
+      }
+    },
+    "update": {
+      "app_update": {
+        "name": "ShellyElevate-App"
+      }
+    },
+    "climate": {
+      "thermostat": {
+        "name": "Thermostat"
+      }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "Befehl {action} fehlgeschlagen: {error}"
+    },
+    "settings_failed": {
+      "message": "Die Display-Einstellungen konnten nicht geändert werden: {error}"
+    },
+    "auth_failed": {
+      "message": "Das Display hat das Token abgelehnt."
+    },
+    "incompatible_api": {
+      "message": "Inkompatible ShellyElevate-API: {error}"
+    },
+    "cannot_connect": {
+      "message": "Verbindung zum Display unter {host} fehlgeschlagen."
+    },
+    "profile_not_found": {
+      "message": "Profil {profile} nicht gefunden."
+    },
+    "backup_not_found": {
+      "message": "Sicherung {backup} nicht gefunden."
+    },
+    "device_not_found": {
+      "message": "{device} ist kein Shelly Elevate-Display."
+    },
+    "device_not_loaded": {
+      "message": "{device} ist nicht verbunden."
+    },
+    "invalid_import": {
+      "message": "Die importierten Daten enthalten keine Einstellungen."
+    },
+    "path_or_url": {
+      "message": "Gib entweder einen Pfad oder eine URL an."
+    },
+    "adb_disabled": {
+      "message": "ADB ist für dieses Display ausgeschaltet. Aktiviere „ADB verwenden“ in den Integrationsoptionen."
+    },
+    "adb_connect_failed": {
+      "message": "ADB-Sitzung zu {host} konnte nicht geöffnet werden: {error}. ADB-Debugging und ADB über WLAN müssen in den Android-Entwickleroptionen aktiviert sein (bei neuerer Shelly-Firmware zusätzlich „ADB - WiFi“ in den Shelly-Entwicklereinstellungen)."
+    },
+    "adb_command_failed": {
+      "message": "ADB-Befehl fehlgeschlagen: {error}"
+    },
+    "apk_install_failed": {
+      "message": "Installation der App fehlgeschlagen: {error}"
+    },
+    "apk_download_failed": {
+      "message": "Download der App fehlgeschlagen: {error}"
+    },
+    "apk_checksum": {
+      "message": "Die heruntergeladene App stimmt nicht mit ihrer Prüfsumme überein."
+    },
+    "release_fetch_failed": {
+      "message": "ShellyElevate-Releases konnten nicht abgerufen werden: {error}"
+    },
+    "no_release": {
+      "message": "Es wurde kein ShellyElevate-Release mit einer APK gefunden."
+    },
+    "version_not_found": {
+      "message": "Version {version} wurde nicht gefunden."
+    },
+    "no_install_method": {
+      "message": "Dieses Display kann nur mit aktiviertem ADB aktualisiert werden."
+    },
+    "screenshot_unsupported": {
+      "message": "Screenshots erfordern eine neuere App-Version oder ADB."
+    },
+    "announce_timeout": {
+      "message": "Die Durchsage wurde nicht rechtzeitig abgeschlossen."
+    },
+    "settings_read_failed": {
+      "message": "Die Display-Einstellungen konnten nicht gelesen werden: {error}"
+    },
+    "token_not_accepted": {
+      "message": "Die App hat das über ADB übergebene Token nicht angenommen. Starte die App neu und versuche es erneut."
+    },
+    "config_entry_failed": {
+      "message": "Das Display konnte nicht zu Home Assistant hinzugefügt werden: {reason}"
+    },
+    "certificate_mismatch": {
+      "message": "Das Sicherheitszertifikat des Displays konnte nicht bestätigt werden: Die App hat über ADB ein anderes Zertifikat gemeldet als im Netzwerk."
+    },
+    "revert_wifi_by_app": {
+      "message": "Das WLAN des Displays wurde in ShellyElevate eingerichtet. Die Deinstallation der App entfernt es, und das Display ist dann offline. Richte das WLAN zuerst in den Shelly-Einstellungen ein oder bestätige, dass du das in Kauf nimmst."
+    },
+    "apk_signature_mismatch": {
+      "message": "Das installierte ShellyElevate wurde mit einem anderen Schlüssel signiert (ein älterer Build). Setze das Display zuerst zurück (das entfernt die alte App) und installiere dann erneut."
+    }
+  },
+  "services": {
+    "backup_settings": {
+      "name": "Einstellungen sichern",
+      "description": "Erstellt eine Momentaufnahme der Einstellungen eines oder mehrerer Displays.",
+      "fields": {
+        "device_id": {
+          "name": "Displays",
+          "description": "Zu sichernde Displays."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Optionaler Name; benannte Sicherungen werden am längsten aufbewahrt."
+        }
+      }
+    },
+    "restore_settings": {
+      "name": "Einstellungen wiederherstellen",
+      "description": "Stellt eine Sicherung der Einstellungen wieder her (nur geänderte Einstellungen werden geschrieben).",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Wiederherzustellendes Display."
+        },
+        "backup_id": {
+          "name": "Sicherungs-ID",
+          "description": "Wiederherzustellende Sicherung; bei leerem Feld die neueste."
+        },
+        "keys": {
+          "name": "Einstellungen",
+          "description": "Nur diese Einstellungsschlüssel wiederherstellen."
+        }
+      }
+    },
+    "apply_profile": {
+      "name": "Profil anwenden",
+      "description": "Wendet ein Einstellungsprofil auf Displays an.",
+      "fields": {
+        "device_id": {
+          "name": "Displays",
+          "description": "Ziel-Displays."
+        },
+        "profile": {
+          "name": "Profil",
+          "description": "Profilname oder -ID."
+        }
+      }
+    },
+    "save_profile": {
+      "name": "Profil speichern",
+      "description": "Speichert die Einstellungen eines Displays als Profil (displayspezifische Einstellungen werden ausgelassen).",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Display, von dem die Einstellungen übernommen werden."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Profilname (ein vorhandenes Profil mit diesem Namen wird ersetzt)."
+        },
+        "make_default": {
+          "name": "Standard für neue Displays",
+          "description": "Dieses Profil für neu hinzugefügte Displays verwenden."
+        },
+        "keys": {
+          "name": "Einstellungen",
+          "description": "Nur diese Einstellungsschlüssel einbeziehen."
+        }
+      }
+    },
+    "copy_settings": {
+      "name": "Einstellungen kopieren",
+      "description": "Kopiert Einstellungen von einem Display auf andere.",
+      "fields": {
+        "source_device_id": {
+          "name": "Quelle",
+          "description": "Display, von dem kopiert wird."
+        },
+        "device_id": {
+          "name": "Ziele",
+          "description": "Displays, auf die kopiert wird."
+        },
+        "keys": {
+          "name": "Einstellungen",
+          "description": "Nur diese Einstellungsschlüssel kopieren."
+        }
+      }
+    },
+    "export_settings": {
+      "name": "Einstellungen exportieren",
+      "description": "Gibt die Einstellungen eines Displays als JSON zurück.",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Zu exportierendes Display."
+        },
+        "include_secrets": {
+          "name": "Zugangsdaten einbeziehen",
+          "description": "Passwörter und Tokens einbeziehen."
+        }
+      }
+    },
+    "import_settings": {
+      "name": "Einstellungen importieren",
+      "description": "Importiert exportierte Einstellungen als Sicherung und wendet sie optional an.",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Ziel-Display."
+        },
+        "settings": {
+          "name": "Einstellungen",
+          "description": "Exportierte Einstellungen (JSON-Objekt)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Name der importierten Sicherung."
+        },
+        "apply": {
+          "name": "Anwenden",
+          "description": "Die importierten Einstellungen sofort anwenden."
+        }
+      }
+    },
+    "get_settings": {
+      "name": "Einstellungen abrufen",
+      "description": "Gibt alle Einstellungen eines Displays zurück (Zugangsdaten geschwärzt).",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Auszulesendes Display."
+        }
+      }
+    },
+    "set_settings": {
+      "name": "Einstellungen setzen",
+      "description": "Schreibt Roh-Einstellungen auf Displays.",
+      "fields": {
+        "device_id": {
+          "name": "Displays",
+          "description": "Ziel-Displays."
+        },
+        "settings": {
+          "name": "Einstellungen",
+          "description": "Zu schreibende Einstellungen, z. B. {\"screenSaverDelay\": 60}."
+        }
+      }
+    },
+    "navigate": {
+      "name": "Navigieren",
+      "description": "Zeigt einen Dashboard-Pfad oder eine URL auf dem Display an (wird nicht gespeichert).",
+      "fields": {
+        "device_id": {
+          "name": "Displays",
+          "description": "Ziel-Displays."
+        },
+        "path": {
+          "name": "Pfad",
+          "description": "Pfad relativ zur Dashboard-URL, z. B. /lovelace/cameras."
+        },
+        "url": {
+          "name": "URL",
+          "description": "Absolute URL."
+        }
+      }
+    },
+    "show_message": {
+      "name": "Nachricht anzeigen",
+      "description": "Zeigt eine Nachricht auf dem Bildschirm an.",
+      "fields": {
+        "device_id": {
+          "name": "Displays",
+          "description": "Ziel-Displays."
+        },
+        "message": {
+          "name": "Nachricht",
+          "description": "Anzuzeigender Text."
+        },
+        "title": {
+          "name": "Titel",
+          "description": "Optionaler Titel."
+        },
+        "duration": {
+          "name": "Dauer",
+          "description": "Anzeigedauer der Nachricht in Sekunden."
+        },
+        "level": {
+          "name": "Stufe",
+          "description": "Visueller Stil."
+        }
+      }
+    },
+    "adb_shell": {
+      "name": "ADB-Shell-Befehl",
+      "description": "Führt einen Shell-Befehl per ADB auf dem Display aus (nur Administratoren).",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Ziel-Display."
+        },
+        "command": {
+          "name": "Befehl",
+          "description": "Shell-Befehl."
+        }
+      }
+    },
+    "install_app": {
+      "name": "App installieren",
+      "description": "Installiert die ShellyElevate-App per ADB (oder installiert sie erneut).",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Ziel-Display."
+        },
+        "version": {
+          "name": "Version",
+          "description": "Bestimmte Version; bei leerem Feld die neueste."
+        }
+      }
+    },
+    "revert_display": {
+      "name": "Display auf Werkszustand zurücksetzen",
+      "description": "Entfernt ShellyElevate und alles, was die Installation geändert hat, per ADB und gibt das Display an die originale Shelly-App zurück.",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Zurückzusetzendes Display."
+        },
+        "remove_from_home_assistant": {
+          "name": "Aus Home Assistant entfernen",
+          "description": "Das Display aus Home Assistant entfernen, sobald die App weg ist."
+        },
+        "reboot": {
+          "name": "Display neu starten",
+          "description": "Das Display am Ende neu starten."
+        },
+        "disable_adb": {
+          "name": "ADB ausschalten",
+          "description": "Am Ende auch ADB über WLAN ausschalten. Home Assistant erreicht das Display dann nicht mehr per ADB, und es wird nicht neu gestartet."
+        },
+        "accept_wifi_loss": {
+          "name": "WLAN-Verlust akzeptieren",
+          "description": "Auch zurücksetzen, wenn das WLAN des Displays in ShellyElevate eingerichtet wurde: Die Deinstallation entfernt dieses Netzwerk."
+        }
+      }
+    }
+  }
+}

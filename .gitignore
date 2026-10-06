@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# Panel build (the bundle in custom_components/shellyelevateintegration/frontend/ IS committed)
+frontend/node_modules/
+frontend/dist/
+
+# Release artifacts
+*.zip
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini

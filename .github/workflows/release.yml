@@ -1,0 +1,23 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check manifest version matches the tag
+        run: |
+          VERSION=$(python3 -c "import json;print(json.load(open('custom_components/shellyelevateintegration/manifest.json'))['version'])")
+          test "v$VERSION" = "${GITHUB_REF_NAME}" || test "$VERSION" = "${GITHUB_REF_NAME}"
+      - name: Zip integration
+        run: cd custom_components/shellyelevateintegration && zip -r ../../shellyelevateintegration.zip . -x "__pycache__/*"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: shellyelevateintegration.zip

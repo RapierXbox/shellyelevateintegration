@@ -1,0 +1,225 @@
+backup_settings:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+          multiple: true
+    name:
+      selector:
+        text:
+
+restore_settings:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+    backup_id:
+      selector:
+        text:
+    keys:
+      selector:
+        text:
+          multiple: true
+
+apply_profile:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+          multiple: true
+    profile:
+      required: true
+      selector:
+        text:
+
+save_profile:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+    name:
+      required: true
+      selector:
+        text:
+    make_default:
+      selector:
+        boolean:
+    keys:
+      selector:
+        text:
+          multiple: true
+
+copy_settings:
+  fields:
+    source_device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+          multiple: true
+    keys:
+      selector:
+        text:
+          multiple: true
+
+export_settings:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+    include_secrets:
+      default: false
+      selector:
+        boolean:
+
+import_settings:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+    settings:
+      required: true
+      selector:
+        object:
+    name:
+      selector:
+        text:
+    apply:
+      default: false
+      selector:
+        boolean:
+
+get_settings:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+
+set_settings:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+          multiple: true
+    settings:
+      required: true
+      selector:
+        object:
+
+navigate:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+          multiple: true
+    path:
+      example: /lovelace/cameras
+      selector:
+        text:
+    url:
+      selector:
+        text:
+          type: url
+
+show_message:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+          multiple: true
+    message:
+      required: true
+      selector:
+        text:
+          multiline: true
+    title:
+      selector:
+        text:
+    duration:
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 3600
+          unit_of_measurement: s
+    level:
+      default: info
+      selector:
+        select:
+          options:
+            - info
+            - warning
+            - alert
+
+adb_shell:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+    command:
+      required: true
+      example: getprop ro.build.version.release
+      selector:
+        text:
+
+install_app:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+    version:
+      selector:
+        text:
+
+revert_display:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+    remove_from_home_assistant:
+      default: true
+      selector:
+        boolean:
+    reboot:
+      default: true
+      selector:
+        boolean:
+    disable_adb:
+      default: false
+      selector:
+        boolean:
+    accept_wifi_loss:
+      default: false
+      selector:
+        boolean:

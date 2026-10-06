@@ -1,0 +1,767 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Add a Shelly Wall Display",
+        "description": "Enter the address of a Shelly Wall Display running ShellyElevate. To install ShellyElevate on a new display, open **Shelly Elevate** in the sidebar and go to **Install**.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the display.",
+          "port": "Port of the ShellyElevate API (default 8443). Older app versions are found on port 8080 automatically."
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Discovered {name}",
+        "description": "Do you want to add the {model} **{name}** ({host})? A pairing code will be shown on the display."
+      },
+      "pair": {
+        "title": "Pair with {name}",
+        "description": "Enter the 6-digit code that is now shown on the display.",
+        "data": {
+          "code": "Pairing code"
+        }
+      },
+      "legacy_confirm": {
+        "title": "Older ShellyElevate version",
+        "description": "**{name}** ({host}) runs an older ShellyElevate version without the native Home Assistant API. It can be added with basic features (relays, sensors, settings, media playback without status), but its HTTP API has no authentication. Update the app later to get push updates, the voice assistant and the Bluetooth proxy."
+      },
+      "profile": {
+        "title": "Apply a settings profile",
+        "description": "Apply one of your settings profiles to the new display. The default profile is pre-selected.",
+        "data": {
+          "profile": "Profile"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Pair again with {name}",
+        "description": "The display no longer accepts the stored token, or it presents a different security certificate (for example after the app was reinstalled). Pair again to continue. A pairing code will be shown on the display."
+      },
+      "reconfigure": {
+        "title": "Change the display address",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      },
+      "upgrade_confirm": {
+        "title": "Switch {name} to the new API",
+        "description": "**{name}** ({host}) now runs a ShellyElevate version with the native Home Assistant API. Pair it to get authentication, push updates, the voice assistant and the Bluetooth proxy. A pairing code will be shown on the display."
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to the display.",
+      "invalid_code": "Invalid pairing code. Check the code shown on the display.",
+      "pairing_expired": "The code expired. A new code is now shown on the display.",
+      "profile_failed": "The profile could not be applied."
+    },
+    "abort": {
+      "already_configured": "This display is already configured.",
+      "cannot_connect": "Could not connect to the display.",
+      "not_shellyelevateintegration": "This is not a ShellyElevate display.",
+      "incompatible_api": "This ShellyElevate version uses an incompatible API version. Update the integration or the app.",
+      "reauth_successful": "Paired again successfully.",
+      "reconfigure_successful": "The address was updated.",
+      "wrong_device": "This address belongs to a different display.",
+      "not_upgraded": "The display still runs an older ShellyElevate version without pairing.",
+      "upgrade_successful": "The display now uses the new API.",
+      "certificate_mismatch": "The display presents a different security certificate than the one Home Assistant paired with. Pair it again."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Shelly Elevate options",
+        "data": {
+          "relays_as_lights": "Show relays as lights",
+          "auto_backup": "Back up settings automatically",
+          "backup_keep": "Number of backups to keep",
+          "update_channel": "Update channel",
+          "adb": "Use ADB (port 5555)",
+          "watchdog": "Restart the app automatically when it stops responding",
+          "thermostat": "Create a thermostat"
+        },
+        "data_description": {
+          "auto_backup": "Takes a snapshot of the display settings after every change.",
+          "adb": "Lets Home Assistant install and update the app, take screenshots and rescue the display over ADB. ADB over Wi-Fi must stay enabled on the display.",
+          "watchdog": "Requires “Use ADB”.",
+          "thermostat": "Creates a thermostat entity that switches a relay of the display based on the temperature.",
+          "backup_keep": "Older automatic backups are removed first; named backups are kept longest."
+        }
+      },
+      "thermostat": {
+        "title": "Thermostat",
+        "description": "The control loop runs in Home Assistant. Without a selection the display's own temperature sensor is used.",
+        "data": {
+          "thermostat_relay": "Relay",
+          "thermostat_sensor": "Temperature sensor",
+          "thermostat_mode": "Mode",
+          "thermostat_tolerance": "Tolerance",
+          "thermostat_min_cycle": "Minimum cycle time",
+          "thermostat_min_temp": "Minimum target temperature",
+          "thermostat_max_temp": "Maximum target temperature"
+        },
+        "data_description": {
+          "thermostat_relay": "Relay that switches the heater or cooler.",
+          "thermostat_sensor": "Leave empty to use the display's own sensor.",
+          "thermostat_tolerance": "The relay switches at target temperature ± tolerance.",
+          "thermostat_min_cycle": "Minimum time between two switching operations (0 = off)."
+        }
+      }
+    },
+    "error": {
+      "invalid_temp_range": "The minimum temperature must be lower than the maximum.",
+      "no_relays": "This display has no relay to switch, so it cannot be a thermostat.",
+      "sensor_required": "This display has no temperature sensor. Choose a temperature sensor."
+    }
+  },
+  "selector": {
+    "update_channel": {
+      "options": {
+        "stable": "Stable",
+        "beta": "Beta (pre-releases)"
+      }
+    },
+    "thermostat_mode": {
+      "options": {
+        "heat": "Heat",
+        "cool": "Cool"
+      }
+    }
+  },
+  "issues": {
+    "legacy_app": {
+      "title": "{name} runs an older ShellyElevate version",
+      "description": "Push updates, buttons and gestures, the voice assistant, the Bluetooth proxy and media status require a ShellyElevate version with the native API. Update the app on the display (for example with the update entity)."
+    },
+    "duplicate_devices": {
+      "title": "{name} also appears as a second device",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Turn off duplicate integrations on {name}",
+            "description": "MQTT discovery, the ESPHome-compatible Bluetooth proxy, or both are enabled on the display. They create a second Home Assistant device for the same display. This integration already provides everything, so they will be turned off. You can then delete the old MQTT/ESPHome device."
+          }
+        },
+        "abort": {
+          "not_loaded": "The display is not connected."
+        }
+      }
+    },
+    "legacy_http_api": {
+      "title": "Unauthenticated legacy API enabled on {name}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Turn off the legacy HTTP API on {name}",
+            "description": "The legacy HTTP API lets anyone on your network control the display without a password. It is not needed by this integration."
+          }
+        },
+        "abort": {
+          "not_loaded": "The display is not connected."
+        }
+      }
+    },
+    "app_unreachable": {
+      "title": "ShellyElevate on {name} is not responding",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Rescue {name}",
+            "description": "The app does not respond, but the display is reachable over ADB. Restart the app, or reinstall it.",
+            "data": {
+              "reinstall": "Reinstall the app"
+            }
+          }
+        },
+        "abort": {
+          "not_loaded": "The display is not set up.",
+          "no_adb": "ADB is not enabled for this display."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "screen_on": {
+        "name": "Screen on"
+      },
+      "voice_muted": {
+        "name": "Microphone muted"
+      },
+      "input": {
+        "name": "Input {index}"
+      },
+      "input_single": {
+        "name": "Input"
+      }
+    },
+    "button": {
+      "restart_app": {
+        "name": "Restart app"
+      },
+      "reload_dashboard": {
+        "name": "Reload dashboard"
+      },
+      "wake": {
+        "name": "Wake screen"
+      },
+      "sleep": {
+        "name": "Sleep screen"
+      },
+      "take_screenshot": {
+        "name": "Take screenshot"
+      },
+      "backup_settings": {
+        "name": "Back up settings"
+      }
+    },
+    "event": {
+      "button": {
+        "name": "Button {index}",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "single": "Single press",
+              "double": "Double press",
+              "triple": "Triple press",
+              "long": "Long press"
+            }
+          }
+        }
+      },
+      "power_button": {
+        "name": "Power button",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "single": "Single press",
+              "double": "Double press",
+              "triple": "Triple press",
+              "long": "Long press"
+            }
+          }
+        }
+      },
+      "swipe": {
+        "name": "Swipe"
+      }
+    },
+    "image": {
+      "screenshot": {
+        "name": "Screenshot"
+      }
+    },
+    "light": {
+      "screen": {
+        "name": "Screen",
+        "state_attributes": {
+          "effect": {
+            "state": {
+              "manual": "Manual brightness",
+              "auto_brightness": "Automatic brightness"
+            }
+          }
+        }
+      },
+      "dimmer": {
+        "name": "Dimmer"
+      },
+      "relay": {
+        "name": "Relay {index}"
+      },
+      "relay_single": {
+        "name": "Relay"
+      }
+    },
+    "notify": {
+      "notify": {
+        "name": "Screen message"
+      }
+    },
+    "number": {
+      "screensaver_delay": {
+        "name": "Screensaver delay"
+      },
+      "min_brightness": {
+        "name": "Minimum brightness"
+      },
+      "screensaver_brightness": {
+        "name": "Screensaver brightness"
+      },
+      "proximity_keep_awake": {
+        "name": "Keep awake after proximity"
+      },
+      "wake_word_sensitivity": {
+        "name": "Wake word sensitivity"
+      },
+      "voice_max_record": {
+        "name": "Maximum recording time"
+      }
+    },
+    "select": {
+      "screensaver_type": {
+        "name": "Screensaver",
+        "state": {
+          "off": "Off",
+          "clock": "Clock",
+          "clock_date": "Clock and date",
+          "always_on": "Always-on display"
+        }
+      },
+      "sleep_optimization": {
+        "name": "Sleep optimization",
+        "state": {
+          "off": "Off",
+          "balanced": "Balanced",
+          "aggressive": "Aggressive"
+        }
+      },
+      "pipeline": {
+        "name": "Assistant",
+        "state": {
+          "preferred": "Preferred"
+        }
+      },
+      "vad_sensitivity": {
+        "name": "Finished speaking detection",
+        "state": {
+          "default": "Default",
+          "aggressive": "Aggressive",
+          "relaxed": "Relaxed"
+        }
+      }
+    },
+    "sensor": {
+      "proximity": {
+        "name": "Proximity"
+      },
+      "screen_brightness": {
+        "name": "Screen brightness"
+      },
+      "cpu_temperature": {
+        "name": "CPU temperature"
+      },
+      "memory_free": {
+        "name": "Free memory"
+      },
+      "app_started": {
+        "name": "App started"
+      },
+      "voice_state": {
+        "name": "Voice assistant",
+        "state": {
+          "idle": "Idle",
+          "listening": "Listening",
+          "processing": "Processing",
+          "responding": "Responding",
+          "error": "Error",
+          "disabled": "Disabled"
+        }
+      }
+    },
+    "switch": {
+      "relay": {
+        "name": "Relay {index}"
+      },
+      "relay_single": {
+        "name": "Relay"
+      },
+      "night_mode": {
+        "name": "Night mode"
+      },
+      "screensaver": {
+        "name": "Screensaver enabled"
+      },
+      "auto_brightness": {
+        "name": "Automatic brightness"
+      },
+      "wake_on_proximity": {
+        "name": "Wake on proximity"
+      },
+      "touch_to_wake": {
+        "name": "Touch to wake"
+      },
+      "voice_assistant": {
+        "name": "Voice assistant"
+      },
+      "voice_mute": {
+        "name": "Mute microphone"
+      },
+      "wake_word": {
+        "name": "Wake word detection"
+      },
+      "bluetooth_proxy": {
+        "name": "Bluetooth proxy"
+      },
+      "media_enabled": {
+        "name": "Media playback"
+      },
+      "buttons_switch_relays": {
+        "name": "Buttons switch relays"
+      },
+      "switch_on_swipe": {
+        "name": "Swipe switches relay"
+      },
+      "legacy_mqtt": {
+        "name": "MQTT"
+      },
+      "legacy_http_api": {
+        "name": "Legacy HTTP API"
+      }
+    },
+    "text": {
+      "dashboard_url": {
+        "name": "Dashboard URL"
+      }
+    },
+    "update": {
+      "app_update": {
+        "name": "ShellyElevate app"
+      }
+    },
+    "climate": {
+      "thermostat": {
+        "name": "Thermostat"
+      }
+    }
+  },
+  "exceptions": {
+    "command_failed": {
+      "message": "Command {action} failed: {error}"
+    },
+    "settings_failed": {
+      "message": "Could not change the display settings: {error}"
+    },
+    "auth_failed": {
+      "message": "The display rejected the token."
+    },
+    "incompatible_api": {
+      "message": "Incompatible ShellyElevate API: {error}"
+    },
+    "cannot_connect": {
+      "message": "Could not connect to the display at {host}."
+    },
+    "profile_not_found": {
+      "message": "Profile {profile} not found."
+    },
+    "backup_not_found": {
+      "message": "Backup {backup} not found."
+    },
+    "device_not_found": {
+      "message": "{device} is not a Shelly Elevate display."
+    },
+    "device_not_loaded": {
+      "message": "{device} is not connected."
+    },
+    "invalid_import": {
+      "message": "The imported data does not contain settings."
+    },
+    "path_or_url": {
+      "message": "Specify either a path or a URL."
+    },
+    "adb_disabled": {
+      "message": "ADB is turned off for this display. Turn on “Use ADB” in the integration options."
+    },
+    "adb_connect_failed": {
+      "message": "Could not open an ADB session to {host}: {error}. ADB debugging and ADB over Wi-Fi must be enabled in the Android developer options (on newer Shelly firmware also ADB - WiFi in the Shelly developer settings)."
+    },
+    "adb_command_failed": {
+      "message": "ADB command failed: {error}"
+    },
+    "apk_install_failed": {
+      "message": "Installing the app failed: {error}"
+    },
+    "apk_download_failed": {
+      "message": "Downloading the app failed: {error}"
+    },
+    "apk_checksum": {
+      "message": "The downloaded app does not match its checksum."
+    },
+    "release_fetch_failed": {
+      "message": "Could not fetch ShellyElevate releases: {error}"
+    },
+    "no_release": {
+      "message": "No ShellyElevate release with an APK was found."
+    },
+    "version_not_found": {
+      "message": "Version {version} was not found."
+    },
+    "no_install_method": {
+      "message": "This display can only be updated with ADB enabled."
+    },
+    "screenshot_unsupported": {
+      "message": "Screenshots need a newer app version or ADB."
+    },
+    "announce_timeout": {
+      "message": "The announcement did not finish in time."
+    },
+    "settings_read_failed": {
+      "message": "Could not read the display settings: {error}"
+    },
+    "token_not_accepted": {
+      "message": "The app did not accept the token handed over through ADB. Restart the app and try again."
+    },
+    "config_entry_failed": {
+      "message": "The display could not be added to Home Assistant: {reason}"
+    },
+    "certificate_mismatch": {
+      "message": "The display's security certificate could not be verified: the app reported a different certificate over ADB than the one on the network."
+    },
+    "revert_wifi_by_app": {
+      "message": "The display's Wi-Fi network was set up in ShellyElevate. Uninstalling the app removes it and the display goes offline. Set up Wi-Fi in the Shelly settings first, or confirm that you accept this."
+    },
+    "apk_signature_mismatch": {
+      "message": "The installed ShellyElevate was signed with a different key (an older build). Revert the display first (this removes the old app), then install again."
+    }
+  },
+  "services": {
+    "backup_settings": {
+      "name": "Back up settings",
+      "description": "Takes a snapshot of the settings of one or more displays.",
+      "fields": {
+        "device_id": {
+          "name": "Displays",
+          "description": "Displays to back up."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Optional name; named backups are kept longest."
+        }
+      }
+    },
+    "restore_settings": {
+      "name": "Restore settings",
+      "description": "Restores a settings backup (only changed settings are written).",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Display to restore."
+        },
+        "backup_id": {
+          "name": "Backup ID",
+          "description": "Backup to restore; the latest if empty."
+        },
+        "keys": {
+          "name": "Settings",
+          "description": "Only restore these setting keys."
+        }
+      }
+    },
+    "apply_profile": {
+      "name": "Apply profile",
+      "description": "Applies a settings profile to displays.",
+      "fields": {
+        "device_id": {
+          "name": "Displays",
+          "description": "Target displays."
+        },
+        "profile": {
+          "name": "Profile",
+          "description": "Profile name or ID."
+        }
+      }
+    },
+    "save_profile": {
+      "name": "Save profile",
+      "description": "Saves the settings of a display as a profile (per-display settings are left out).",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Display to take the settings from."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Profile name (an existing profile with this name is replaced)."
+        },
+        "make_default": {
+          "name": "Default for new displays",
+          "description": "Use this profile for newly added displays."
+        },
+        "keys": {
+          "name": "Settings",
+          "description": "Only include these setting keys."
+        }
+      }
+    },
+    "copy_settings": {
+      "name": "Copy settings",
+      "description": "Copies settings from one display to others.",
+      "fields": {
+        "source_device_id": {
+          "name": "Source",
+          "description": "Display to copy from."
+        },
+        "device_id": {
+          "name": "Targets",
+          "description": "Displays to copy to."
+        },
+        "keys": {
+          "name": "Settings",
+          "description": "Only copy these setting keys."
+        }
+      }
+    },
+    "export_settings": {
+      "name": "Export settings",
+      "description": "Returns the settings of a display as JSON.",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Display to export."
+        },
+        "include_secrets": {
+          "name": "Include secrets",
+          "description": "Include passwords and tokens."
+        }
+      }
+    },
+    "import_settings": {
+      "name": "Import settings",
+      "description": "Imports exported settings as a backup and optionally applies them.",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Target display."
+        },
+        "settings": {
+          "name": "Settings",
+          "description": "Exported settings (JSON object)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Name of the imported backup."
+        },
+        "apply": {
+          "name": "Apply",
+          "description": "Apply the imported settings now."
+        }
+      }
+    },
+    "get_settings": {
+      "name": "Get settings",
+      "description": "Returns all settings of a display (secrets redacted).",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Display to read."
+        }
+      }
+    },
+    "set_settings": {
+      "name": "Set settings",
+      "description": "Writes raw settings to displays.",
+      "fields": {
+        "device_id": {
+          "name": "Displays",
+          "description": "Target displays."
+        },
+        "settings": {
+          "name": "Settings",
+          "description": "Settings to write, e.g. {\"screenSaverDelay\": 60}."
+        }
+      }
+    },
+    "navigate": {
+      "name": "Navigate",
+      "description": "Shows a dashboard path or URL on the display (not persisted).",
+      "fields": {
+        "device_id": {
+          "name": "Displays",
+          "description": "Target displays."
+        },
+        "path": {
+          "name": "Path",
+          "description": "Path relative to the dashboard URL, e.g. /lovelace/cameras."
+        },
+        "url": {
+          "name": "URL",
+          "description": "Absolute URL."
+        }
+      }
+    },
+    "show_message": {
+      "name": "Show message",
+      "description": "Shows a message on the screen.",
+      "fields": {
+        "device_id": {
+          "name": "Displays",
+          "description": "Target displays."
+        },
+        "message": {
+          "name": "Message",
+          "description": "Text to show."
+        },
+        "title": {
+          "name": "Title",
+          "description": "Optional title."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Seconds to show the message."
+        },
+        "level": {
+          "name": "Level",
+          "description": "Visual style."
+        }
+      }
+    },
+    "adb_shell": {
+      "name": "ADB shell command",
+      "description": "Runs a shell command on the display over ADB (admin only).",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Target display."
+        },
+        "command": {
+          "name": "Command",
+          "description": "Shell command."
+        }
+      }
+    },
+    "install_app": {
+      "name": "Install app",
+      "description": "Installs (or reinstalls) the ShellyElevate app over ADB.",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Target display."
+        },
+        "version": {
+          "name": "Version",
+          "description": "Specific version; latest if empty."
+        }
+      }
+    },
+    "revert_display": {
+      "name": "Revert display to stock",
+      "description": "Removes ShellyElevate and everything its installation changed over ADB, and gives the display back to the stock Shelly app.",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Display to revert."
+        },
+        "remove_from_home_assistant": {
+          "name": "Remove from Home Assistant",
+          "description": "Remove the display from Home Assistant once the app is gone."
+        },
+        "reboot": {
+          "name": "Restart the display",
+          "description": "Restart the display at the end."
+        },
+        "disable_adb": {
+          "name": "Turn off ADB",
+          "description": "Also turn off ADB over Wi-Fi at the very end. Home Assistant can then no longer reach the display over ADB, and the display is not restarted."
+        },
+        "accept_wifi_loss": {
+          "name": "Accept losing Wi-Fi",
+          "description": "Revert even if the display's Wi-Fi network was set up in ShellyElevate: uninstalling it removes that network."
+        }
+      }
+    }
+  }
+}

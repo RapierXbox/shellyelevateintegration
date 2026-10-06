@@ -1,0 +1,208 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "screen_on": {
+        "default": "mdi:monitor",
+        "state": {
+          "off": "mdi:monitor-off"
+        }
+      },
+      "voice_muted": {
+        "default": "mdi:microphone",
+        "state": {
+          "on": "mdi:microphone-off"
+        }
+      }
+    },
+    "button": {
+      "restart_app": {
+        "default": "mdi:restart"
+      },
+      "reload_dashboard": {
+        "default": "mdi:web-refresh"
+      },
+      "wake": {
+        "default": "mdi:monitor-eye"
+      },
+      "sleep": {
+        "default": "mdi:monitor-off"
+      },
+      "take_screenshot": {
+        "default": "mdi:monitor-screenshot"
+      },
+      "backup_settings": {
+        "default": "mdi:content-save-cog"
+      }
+    },
+    "event": {
+      "swipe": {
+        "default": "mdi:gesture-swipe"
+      },
+      "button": {
+        "default": "mdi:gesture-tap-button"
+      },
+      "power_button": {
+        "default": "mdi:power"
+      }
+    },
+    "image": {
+      "screenshot": {
+        "default": "mdi:monitor-screenshot"
+      }
+    },
+    "light": {
+      "screen": {
+        "default": "mdi:tablet-dashboard"
+      },
+      "dimmer": {
+        "default": "mdi:lightbulb"
+      }
+    },
+    "notify": {
+      "notify": {
+        "default": "mdi:message-badge"
+      }
+    },
+    "number": {
+      "screensaver_delay": {
+        "default": "mdi:timer-outline"
+      },
+      "min_brightness": {
+        "default": "mdi:brightness-5"
+      },
+      "screensaver_brightness": {
+        "default": "mdi:brightness-4"
+      },
+      "proximity_keep_awake": {
+        "default": "mdi:motion-sensor"
+      },
+      "wake_word_sensitivity": {
+        "default": "mdi:account-voice"
+      },
+      "voice_max_record": {
+        "default": "mdi:record-rec"
+      }
+    },
+    "select": {
+      "screensaver_type": {
+        "default": "mdi:clock-outline"
+      },
+      "sleep_optimization": {
+        "default": "mdi:sleep"
+      }
+    },
+    "sensor": {
+      "proximity": {
+        "default": "mdi:signal-distance-variant"
+      },
+      "screen_brightness": {
+        "default": "mdi:brightness-6"
+      },
+      "memory_free": {
+        "default": "mdi:memory"
+      },
+      "app_started": {
+        "default": "mdi:clock-start"
+      },
+      "voice_state": {
+        "default": "mdi:account-voice"
+      }
+    },
+    "switch": {
+      "night_mode": {
+        "default": "mdi:weather-night"
+      },
+      "screensaver": {
+        "default": "mdi:monitor-shimmer"
+      },
+      "auto_brightness": {
+        "default": "mdi:brightness-auto"
+      },
+      "wake_on_proximity": {
+        "default": "mdi:motion-sensor"
+      },
+      "touch_to_wake": {
+        "default": "mdi:gesture-tap"
+      },
+      "voice_assistant": {
+        "default": "mdi:account-voice"
+      },
+      "voice_mute": {
+        "default": "mdi:microphone",
+        "state": {
+          "on": "mdi:microphone-off"
+        }
+      },
+      "wake_word": {
+        "default": "mdi:chat-processing"
+      },
+      "bluetooth_proxy": {
+        "default": "mdi:bluetooth"
+      },
+      "media_enabled": {
+        "default": "mdi:speaker"
+      },
+      "buttons_switch_relays": {
+        "default": "mdi:gesture-tap-button"
+      },
+      "switch_on_swipe": {
+        "default": "mdi:gesture-swipe"
+      },
+      "legacy_mqtt": {
+        "default": "mdi:lan"
+      },
+      "legacy_http_api": {
+        "default": "mdi:api"
+      }
+    },
+    "text": {
+      "dashboard_url": {
+        "default": "mdi:view-dashboard"
+      }
+    }
+  },
+  "services": {
+    "backup_settings": {
+      "service": "mdi:content-save-cog"
+    },
+    "restore_settings": {
+      "service": "mdi:backup-restore"
+    },
+    "apply_profile": {
+      "service": "mdi:file-cog"
+    },
+    "save_profile": {
+      "service": "mdi:file-document-edit"
+    },
+    "copy_settings": {
+      "service": "mdi:content-copy"
+    },
+    "export_settings": {
+      "service": "mdi:export"
+    },
+    "import_settings": {
+      "service": "mdi:import"
+    },
+    "get_settings": {
+      "service": "mdi:cog-outline"
+    },
+    "set_settings": {
+      "service": "mdi:cog"
+    },
+    "navigate": {
+      "service": "mdi:navigation-variant"
+    },
+    "show_message": {
+      "service": "mdi:message-badge"
+    },
+    "adb_shell": {
+      "service": "mdi:console"
+    },
+    "install_app": {
+      "service": "mdi:download"
+    },
+    "revert_display": {
+      "service": "mdi:backup-restore"
+    }
+  }
+}

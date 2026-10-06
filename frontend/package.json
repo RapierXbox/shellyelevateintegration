@@ -1,0 +1,20 @@
+{
+  "name": "shelly-elevate-panel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Home Assistant sidebar panel for the Shelly Elevate integration",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mdi/js": "^7.4.47",
+    "lit": "^3.3.3"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2"
+  }
+}
