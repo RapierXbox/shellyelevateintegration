@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity, SwitchEntityDescription
@@ -58,7 +58,11 @@ SETTING_SWITCHES: tuple[ShellyElevateIntegrationSwitchDescription, ...] = (
     _setting_switch("buttons_switch_relays", "buttonRelayEnabled", enabled=False),
     _setting_switch("switch_on_swipe", "switchOnSwipe", enabled=False),
     _setting_switch("legacy_mqtt", "mqttEnabled", enabled=False),
-    _setting_switch("legacy_http_api", "httpServer", enabled=False),
+    # v1 displays only: on a legacy display this server is the connection itself
+    replace(
+        _setting_switch("legacy_http_api", "httpServer", enabled=False),
+        supported_fn=lambda device: not device.legacy and "httpServer" in device.settings,
+    ),
 )
 
 NIGHT_MODE = ShellyElevateIntegrationSwitchDescription(

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.components.repairs import RepairsFlow, RepairsFlowResult
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 import voluptuous as vol
 
@@ -19,10 +20,6 @@ ISSUE_LEGACY_APP = "legacy_app"
 ISSUE_DUPLICATES = "duplicate_devices"
 ISSUE_LEGACY_HTTP = "legacy_http_api"
 ISSUE_APP_DOWN = "app_unreachable"
-
-# v1 settings that create a second Home Assistant device for the same display: MQTT discovery and
-# the app's deprecated ESPHome proxy (gone after its removal; then the key is simply absent)
-DUPLICATE_SETTINGS = {"mqttHomeAssistantDiscovery": False, "bluetoothProxyEnabled": False}
 
 LEGACY_HTTP_KEY = "httpServer"
 """The app's switch for its unauthenticated HTTP API on port 8080."""
@@ -76,13 +73,19 @@ def async_check_issues(hass: HomeAssistant, device: ShellyElevateIntegrationDevi
     if device.legacy:
         return
     settings = device.settings
-    _async_update_issue(
-        hass,
-        ISSUE_DUPLICATES,
-        device,
-        any(settings.get(key) not in (None, value) for key, value in DUPLICATE_SETTINGS.items()),
-    )
+    _async_update_issue(hass, ISSUE_DUPLICATES, device, bool(_duplicate_fix(settings)))
     _async_update_issue(hass, ISSUE_LEGACY_HTTP, device, bool(settings.get(LEGACY_HTTP_KEY)))
+
+
+def _duplicate_fix(settings: dict[str, Any]) -> dict[str, Any]:
+    """Settings that would remove the second device; empty when there is none."""
+    changes = {}
+    # discovery only creates a device while MQTT itself is on
+    if settings.get("mqttEnabled") and settings.get("mqttHomeAssistantDiscovery"):
+        changes["mqttHomeAssistantDiscovery"] = False
+    if settings.get("bluetoothProxyEnabled"):
+        changes["bluetoothProxyEnabled"] = False
+    return changes
 
 
 @callback
@@ -110,20 +113,24 @@ class SettingsFixFlow(RepairsFlow):
             return self.async_abort(reason="not_loaded")
         device: ShellyElevateIntegrationDevice = entry.runtime_data
         if user_input is not None:
-            if self.fix == ISSUE_DUPLICATES:
-                changes = {k: v for k, v in DUPLICATE_SETTINGS.items() if k in device.settings}
-                await device.async_set_settings(changes)
-            elif self.fix == ISSUE_LEGACY_HTTP:
-                await device.async_set_settings({LEGACY_HTTP_KEY: False})
-            elif self.fix == ISSUE_APP_DOWN:
-                if device.adb is None:
-                    return self.async_abort(reason="no_adb")
-                if user_input.get("reinstall"):
-                    await device.adb.async_install_app(
-                        channel=entry.options.get(OPT_UPDATE_CHANNEL, UPDATE_CHANNEL_STABLE)
-                    )
-                else:
-                    await device.adb.async_restart_app()
+            try:
+                if self.fix == ISSUE_DUPLICATES:
+                    if changes := _duplicate_fix(device.settings):
+                        await device.async_set_settings(changes)
+                elif self.fix == ISSUE_LEGACY_HTTP:
+                    await device.async_set_settings({LEGACY_HTTP_KEY: False})
+                elif self.fix == ISSUE_APP_DOWN:
+                    if device.adb is None:
+                        return self.async_abort(reason="no_adb")
+                    if user_input.get("reinstall"):
+                        await device.adb.async_install_app(
+                            channel=entry.options.get(OPT_UPDATE_CHANNEL, UPDATE_CHANNEL_STABLE)
+                        )
+                    else:
+                        await device.adb.async_restart_app()
+            except HomeAssistantError:
+                async_check_issues(self.hass, device)
+                return self.async_abort(reason="cannot_connect")
             async_check_issues(self.hass, device)
             return self.async_create_entry(data={})
         schema = vol.Schema({vol.Optional("reinstall", default=False): bool}) if self.fix == ISSUE_APP_DOWN else None

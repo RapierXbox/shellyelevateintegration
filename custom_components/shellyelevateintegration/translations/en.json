@@ -160,7 +160,8 @@
           }
         },
         "abort": {
-          "not_loaded": "The display is not connected."
+          "not_loaded": "The display is not connected.",
+          "cannot_connect": "The change could not be sent to the display."
         }
       }
     },
@@ -174,7 +175,8 @@
           }
         },
         "abort": {
-          "not_loaded": "The display is not connected."
+          "not_loaded": "The display is not connected.",
+          "cannot_connect": "The change could not be sent to the display."
         }
       }
     },
@@ -192,7 +194,8 @@
         },
         "abort": {
           "not_loaded": "The display is not set up.",
-          "no_adb": "ADB is not enabled for this display."
+          "no_adb": "ADB is not enabled for this display.",
+          "cannot_connect": "The change could not be sent to the display."
         }
       }
     }
