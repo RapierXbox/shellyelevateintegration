@@ -580,19 +580,21 @@ export class SeSettingsTab extends LitElement {
     `;
   }
 
-  /** Search bar below the app bar, as on Settings → System → Logs. */
+  /** Search bar below the app bar, as on Settings → System → Logs, with the display picker at its end. */
   private _renderSearch() {
     const onFilter = (e: Event) => (this._filter = inputValue(e));
-    const placeholder = `Search ${plural(this._data?.schema.length ?? 0, "setting")}`;
+    const placeholder = this._data ? `Search ${plural(this._data.schema.length, "setting")}` : "Search settings";
     return html`<div class="search">
       ${isDefined("ha-input-search")
         ? html`<ha-input-search
             appearance="outlined"
             .placeholder=${placeholder}
             .value=${this._filter}
+            .disabled=${!this._data}
             @input=${onFilter}
           ></ha-input-search>`
-        : html`<ha-input .placeholder=${placeholder} .value=${this._filter} @input=${onFilter}></ha-input>`}
+        : html`<ha-input .placeholder=${placeholder} .value=${this._filter} .disabled=${!this._data} @input=${onFilter}></ha-input>`}
+      ${displayPicker(this.page.hass, this.devices, this.entryId, (entryId) => this._selectDevice(entryId))}
     </div>`;
   }
 
@@ -804,10 +806,7 @@ export class SeSettingsTab extends LitElement {
   render() {
     if (!this.page) return nothing;
     const content = this.devices.some(isLoaded)
-      ? html`${this._data ? this._renderSearch() : nothing}<div class="content">
-          ${displayPicker(this.page.hass, this.devices, this.entryId, (entryId) => this._selectDevice(entryId))}
-          ${this._renderContent()}
-        </div>`
+      ? html`${this._renderSearch()}<div class="content">${this._renderContent()}</div>`
       : html`<div class="content">${noDisplaysCard(this, this.devices)}</div>`;
     return html`
       ${renderPage(this, this.page, content, this._fab(), this._menu())}

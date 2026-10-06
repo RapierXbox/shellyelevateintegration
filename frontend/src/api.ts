@@ -158,6 +158,8 @@ export type InstallerEvent = StepEvent | InstallerDoneEvent | { type: "error"; e
 export interface ProvisionOptions {
   install_app: boolean;
   channel: "stable" | "beta";
+  /** A specific release to install; null = the latest of `channel`. */
+  version: string | null;
   /** Keep the stock Shelly app from covering Shelly Elevate (see post_install_commands). */
   disable_stock: boolean;
   profile_id: string | null;

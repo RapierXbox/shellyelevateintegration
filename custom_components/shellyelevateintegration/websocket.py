@@ -384,7 +384,7 @@ async def ws_installer_info(
         releases = [
             {"version": r.version, "prerelease": r.prerelease, "published": r.published}
             for r in await async_get_releases(hass)
-        ][:10]
+        ]
     except HomeAssistantError:
         pass
     manager = await async_get_profile_manager(hass)
@@ -402,6 +402,7 @@ async def ws_installer_info(
         vol.Required("host"): str,
         vol.Optional("install_app", default=True): bool,
         vol.Optional("channel", default="stable"): vol.In(["stable", "beta"]),
+        vol.Optional("version"): vol.Any(str, None),
         vol.Optional("disable_stock", default=False): bool,
         vol.Optional("profile_id"): vol.Any(str, None),
         vol.Optional("dashboard_url"): vol.Any(str, None),
@@ -416,6 +417,7 @@ async def ws_provision(hass: HomeAssistant, connection: websocket_api.ActiveConn
         host=msg["host"],
         install_app=msg["install_app"],
         channel=msg["channel"],
+        version=msg.get("version"),
         disable_stock=msg["disable_stock"],
         profile_id=msg.get("profile_id"),
         dashboard_url=msg.get("dashboard_url"),

@@ -153,8 +153,11 @@ const stepDetail = (ev: StepEvent, current?: string): string | undefined => {
 };
 
 const OPTION_LABELS: Record<string, [string, string?]> = {
-  install_app: ["Install the Shelly Elevate app", "Downloads the latest release from GitHub and installs it."],
-  channel: ["Release channel"],
+  install_app: ["Install the Shelly Elevate app", "Downloads the version chosen below from GitHub and installs it."],
+  release: [
+    "App version",
+    "Latest installs the newest release of the channel. Pick a version to install exactly that one.",
+  ],
   disable_stock: [
     "Keep the stock Shelly app in the background",
     "Keeps the stock Shelly app from covering Shelly Elevate. On Android 11 models (Wall Display XL, X2i, X1i) the stock app is only kept from drawing on top and stopped; on older models it is disabled, which leaves the display without a home app.",
@@ -164,10 +167,14 @@ const OPTION_LABELS: Record<string, [string, string?]> = {
 };
 
 /** Form data of the options form (ha-form needs plain values). */
-interface OptionsForm extends Omit<ProvisionOptions, "profile_id" | "dashboard_url"> {
+interface OptionsForm extends Omit<ProvisionOptions, "profile_id" | "dashboard_url" | "channel" | "version"> {
+  /** "stable", "beta" (latest of that channel) or "v:<version>" */
+  release: string;
   profile_id: string;
   dashboard_url: string;
 }
+
+const VERSION_PREFIX = "v:";
 
 // --------------------------------------------------------------------------- element
 
@@ -233,6 +240,7 @@ export class SeInstallTab extends LitElement {
     this._opts = {
       install_app: true,
       channel: "stable",
+      version: null,
       disable_stock: false,
       profile_id: null,
       dashboard_url: null,
@@ -568,26 +576,36 @@ export class SeInstallTab extends LitElement {
 
   private _optionsSchema(): HaFormSchema[] {
     const releases = this._info?.releases ?? [];
-    const channelLabel = (beta: boolean) => {
+    const latestLabel = (beta: boolean) => {
       const latest = releases.find((r) => beta || !r.prerelease)?.version;
-      return `${beta ? "Beta" : "Stable"}${latest ? ` (${latest})` : ""}`;
+      return `Latest ${beta ? "beta" : "stable"}${latest ? ` (${latest})` : ""}`;
     };
-    const channel: HaFormSchema = {
-      name: "channel",
+    const release: HaFormSchema = {
+      name: "release",
       required: true,
       selector: {
         select: {
           mode: "dropdown",
           options: [
-            { value: "stable", label: channelLabel(false) },
-            { value: "beta", label: channelLabel(true) },
+            { value: "stable", label: latestLabel(false) },
+            { value: "beta", label: latestLabel(true) },
+            ...releases.map((r) => ({
+              value: `${VERSION_PREFIX}${r.version}`,
+              label: [
+                r.version,
+                r.prerelease ? "beta" : "",
+                r.published ? new Date(r.published).toLocaleDateString(this.page.hass.locale?.language) : "",
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            })),
           ],
         },
       },
     };
     return [
       { name: "install_app", selector: { boolean: {} } },
-      ...(this._opts.install_app ? [channel] : []),
+      ...(this._opts.install_app ? [release] : []),
       { name: "disable_stock", selector: { boolean: {} } },
       {
         name: "profile_id",
@@ -607,8 +625,10 @@ export class SeInstallTab extends LitElement {
   }
 
   private _renderOptions(disabled: boolean) {
+    const { channel, version, ...rest } = this._opts;
     const data: OptionsForm = {
-      ...this._opts,
+      ...rest,
+      release: version ? `${VERSION_PREFIX}${version}` : channel,
       profile_id: this._opts.profile_id || NO_PROFILE,
       dashboard_url: this._opts.dashboard_url ?? "",
     };
@@ -622,9 +642,11 @@ export class SeInstallTab extends LitElement {
       @value-changed=${(e: ValueChangedEvent<Partial<OptionsForm>>) => {
         e.stopPropagation();
         const v = e.detail.value;
+        const picked = v.release ?? "stable";
         this._opts = {
           install_app: !!v.install_app,
-          channel: v.channel === "beta" ? "beta" : "stable",
+          channel: picked === "beta" ? "beta" : "stable",
+          version: picked.startsWith(VERSION_PREFIX) ? picked.slice(VERSION_PREFIX.length) : null,
           disable_stock: !!v.disable_stock,
           profile_id: v.profile_id && v.profile_id !== NO_PROFILE ? v.profile_id : null,
           dashboard_url: v.dashboard_url || null,

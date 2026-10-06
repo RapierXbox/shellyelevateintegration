@@ -24,7 +24,7 @@ from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.translation import async_get_translations
 
 from .adb import steps
-from .adb.apk import async_latest_release
+from .adb.apk import async_get_releases, async_latest_release
 from .adb.baseline import async_get_baseline_store
 from .adb.manager import AdbError, ProgressCallback, async_create_adb_manager
 from .api import (
@@ -54,6 +54,8 @@ class ProvisionOptions:
     host: str
     install_app: bool = True
     channel: str = UPDATE_CHANNEL_STABLE
+    version: str | None = None
+    """Install exactly this release instead of the latest one of the channel."""
     disable_stock: bool = False
     """Keep the stock app from covering ShellyElevate (see steps.post_install_commands)."""
     profile_id: str | None = None
@@ -99,9 +101,18 @@ async def async_provision(hass: HomeAssistant, options: ProvisionOptions, progre
                 _LOGGER.debug("Could not read the stock values of %s: %s", options.host, err)
 
     if options.install_app:
-        release = await async_latest_release(hass, options.channel)
-        if release is None:
-            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="no_release")
+        if options.version:
+            release = next((r for r in await async_get_releases(hass) if r.version == options.version), None)
+            if release is None:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="version_not_found",
+                    translation_placeholders={"version": options.version},
+                )
+        else:
+            release = await async_latest_release(hass, options.channel)
+            if release is None:
+                raise HomeAssistantError(translation_domain=DOMAIN, translation_key="no_release")
         await adb.async_install_app(release, progress=progress, disable_stock=options.disable_stock, sdk=platform.sdk)
     else:
         await adb.async_run_steps(

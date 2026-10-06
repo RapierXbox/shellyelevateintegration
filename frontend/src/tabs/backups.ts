@@ -447,7 +447,6 @@ export class SeBackupsTab extends LitElement {
     const others = this._otherIds;
     const device = this._device;
     return html`
-      ${displayPicker(this.page.hass, this.devices, this.entryId, (entryId) => selectEntry(this, entryId))}
       ${device && !device.available
         ? html`<ha-alert alert-type="warning" title="${device.name} is offline">
             Backups can be created and restored once it is back online.
@@ -460,7 +459,10 @@ export class SeBackupsTab extends LitElement {
           </ha-alert>`
         : nothing}
       <ha-card>
-        <div class="card-header">My backups</div>
+        <div class="card-header">
+          <span>My backups</span>
+          ${displayPicker(this.page.hass, this.devices, this.entryId, (entryId) => selectEntry(this, entryId))}
+        </div>
         <div class="card-content list">
           <p class="intro">
             Backups of the display settings are stored in Home Assistant and are part of Home Assistant backups.
@@ -506,6 +508,23 @@ export class SeBackupsTab extends LitElement {
     pageStyles,
     dialogStyles,
     css`
+      /* "My backups" with the display picker at the end of the header; the button overlaps the
+         header's padding so the header keeps the height of a plain one */
+      .card-header:has(.display-picker) {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--ha-space-2);
+      }
+      .card-header .display-picker {
+        margin-block: calc((var(--ha-line-height-condensed) * var(--ha-font-size-2xl) - 40px) / 2);
+        font-size: var(--ha-font-size-m);
+        letter-spacing: normal;
+        line-height: normal;
+      }
+      .card-header > span {
+        min-width: 0;
+      }
       /* ha-backup-overview-backups */
       .card-content.list {
         padding-left: 0;

@@ -5,7 +5,7 @@
  * Also building blocks used by several tabs.
  */
 import { css, html, nothing, type TemplateResult } from "lit";
-import { mdiCogOutline, mdiDotsVertical, mdiRefresh } from "@mdi/js";
+import { mdiChevronDown, mdiCogOutline, mdiDotsVertical, mdiRefresh } from "@mdi/js";
 import { mdiShellyElevateDisplay } from "./icons";
 import { type DeviceSummary, isLoaded } from "./api";
 import {
@@ -13,7 +13,6 @@ import {
   type HomeAssistant,
   type PickerItem,
   type Route,
-  type SelectedEvent,
   type ValueChangedEvent,
   isDefined,
   navigate,
@@ -163,9 +162,10 @@ const pickerItemsFor = (devices: DeviceSummary[]): (() => PickerItem[]) => {
 };
 
 /**
- * Display picker of the per-display tabs (loaded displays only): a picker field at the top of the
- * page content, like the target picker of the History and Logbook panels (`ha-generic-picker`
- * with its own field; a searchable popover, a bottom sheet on phones).
+ * Display picker of the per-display tabs (loaded displays only): the provider picker of Settings →
+ * System → Logs, i.e. `ha-generic-picker` with a filled button as its field (a searchable popover,
+ * a bottom sheet on phones). It sits in the Settings search bar and in the header of the
+ * "My backups" card, so the page content starts where it does on every other tab.
  */
 export const displayPicker = (
   hass: HomeAssistant,
@@ -174,6 +174,17 @@ export const displayPicker = (
   onSelect: (entryId: string) => void,
 ) => {
   const loaded = devices.filter(isLoaded);
+  const current = loaded.find((d) => d.entry_id === entryId);
+  const button = (onClick?: (ev: Event) => void) => html`<ha-button
+    slot=${onClick ? "field" : "trigger"}
+    appearance="filled"
+    .disabled=${!loaded.length}
+    @click=${onClick}
+  >
+    <ha-svg-icon slot="start" .path=${mdiShellyElevateDisplay}></ha-svg-icon>
+    ${current?.name ?? "Display"}
+    <ha-svg-icon slot="end" .path=${mdiChevronDown}></ha-svg-icon>
+  </ha-button>`;
   if (isDefined("ha-generic-picker")) {
     return html`<ha-generic-picker
       class="display-picker"
@@ -181,44 +192,36 @@ export const displayPicker = (
       .getItems=${pickerItemsFor(devices)}
       .value=${entryId}
       .rowRenderer=${pickerRow}
-      .valueRenderer=${valueRendererFor(devices)}
-      .disabled=${!loaded.length}
-      hide-clear-icon
       label="Display"
       search-label="Search displays"
       @value-changed=${(ev: ValueChangedEvent<string>) => {
         ev.stopPropagation();
         if (ev.detail?.value) onSelect(ev.detail.value);
       }}
-    ></ha-generic-picker>`;
+    >
+      ${button((ev) => {
+        ev.stopPropagation();
+        ((ev.currentTarget as HTMLElement).parentElement as HTMLElement & { open(): void }).open();
+      })}
+    </ha-generic-picker>`;
   }
-  // Fallback: a select with the displays.
-  return html`<ha-select
+  // Fallback: a menu with the displays.
+  return html`<ha-dropdown
     class="display-picker"
-    label="Display"
-    .options=${loaded.map((d) => ({ value: d.entry_id, label: `${d.name}${d.available ? "" : " (offline)"}` }))}
-    .value=${entryId}
-    @selected=${(ev: SelectedEvent) => {
+    placement="bottom-end"
+    @wa-select=${(ev: DropdownSelectEvent) => {
       ev.stopPropagation();
-      if (ev.detail?.value) onSelect(ev.detail.value);
+      onSelect(ev.detail.item.value);
     }}
-  ></ha-select>`;
-};
-
-/** Selected display in the picker field (name, "Offline" below it, as in the list). */
-const valueRenderers = new WeakMap<DeviceSummary[], (value: string) => TemplateResult>();
-const valueRendererFor = (devices: DeviceSummary[]) => {
-  let fn = valueRenderers.get(devices);
-  if (!fn) {
-    fn = (value: string) => {
-      const d = devices.find((x) => x.entry_id === value);
-      return html`<span slot="headline">${d?.name ?? value}</span>${d && !d.available
-          ? html`<span slot="supporting-text">Offline</span>`
-          : nothing}`;
-    };
-    valueRenderers.set(devices, fn);
-  }
-  return fn;
+  >
+    ${button()}
+    ${loaded.map(
+      (d) => html`<ha-dropdown-item value=${d.entry_id} .selected=${d.entry_id === entryId}>
+        <ha-svg-icon slot="icon" .path=${mdiShellyElevateDisplay}></ha-svg-icon>
+        ${d.name}${d.available ? nothing : html` (offline)`}
+      </ha-dropdown-item>`,
+    )}
+  </ha-dropdown>`;
 };
 
 export const pageStyles = css`
@@ -238,21 +241,45 @@ export const pageStyles = css`
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* the display picker button (ha-config-logs) */
   .display-picker {
-    display: block;
+    --md-list-item-leading-icon-color: var(--ha-color-primary-50);
+    --mdc-icon-size: var(--ha-space-6);
+    flex-shrink: 0;
+    min-width: 0;
+    max-width: 50%;
   }
-  /* search bar below the app bar (ha-config-logs) */
+  .display-picker ha-button {
+    max-width: 100%;
+  }
+  .display-picker ha-button::part(label) {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  :host([narrow]) .display-picker ha-svg-icon[slot="start"] {
+    display: none;
+  }
+  /* search bar below the app bar (ha-config-logs); the display picker sits at its end */
   .search {
     position: sticky;
     top: 0;
     z-index: 2;
-  }
-  .search ha-input-search,
-  .search ha-input {
-    padding: var(--ha-space-3);
+    display: flex;
+    align-items: center;
     background: var(--sidebar-background-color);
     border-bottom: 1px solid var(--divider-color);
   }
+  .search ha-input-search,
+  .search ha-input {
+    flex: 1;
+    min-width: 0;
+    padding: var(--ha-space-3);
+  }
+  .search .display-picker {
+    margin-inline-end: var(--ha-space-3);
+  }
+
   .fb-page {
     display: flex;
     flex-direction: column;
