@@ -447,6 +447,7 @@ export class SeBackupsTab extends LitElement {
     const others = this._otherIds;
     const device = this._device;
     return html`
+      ${displayPicker(this.page.hass, this.devices, this.entryId, (entryId) => selectEntry(this, entryId))}
       ${device && !device.available
         ? html`<ha-alert alert-type="warning" title="${device.name} is offline">
             Backups can be created and restored once it is back online.
@@ -475,11 +476,10 @@ export class SeBackupsTab extends LitElement {
     `;
   }
 
-  /** Display picker in the app bar; "Reload" of the toolbar menu also reloads the backups. */
+  /** "Reload" of the toolbar menu also reloads the backups. */
   private _menu(): PageMenu {
     if (!this.devices.some(isLoaded)) return {};
     return {
-      picker: displayPicker(this.page.hass, this.devices, this.entryId, (entryId) => selectEntry(this, entryId)),
       onReload: () => {
         this._load();
       },

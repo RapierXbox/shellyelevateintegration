@@ -536,16 +536,12 @@ export class SeSettingsTab extends LitElement {
     );
   }
 
-  /**
-   * Display picker in the app bar; reload / export / copy / save as profile in the toolbar menu
-   * (like "Upload backup" on Backups).
-   */
+  /** Reload / export / copy / save as profile in the toolbar menu (like "Upload backup" on Backups). */
   private _menu(): PageMenu {
     const loadedCount = this.devices.filter(isLoaded).length;
     const off = !this._data;
     if (!loadedCount) return {};
     return {
-      picker: displayPicker(this.page.hass, this.devices, this.entryId, (entryId) => this._selectDevice(entryId)),
       items: html`
         <ha-dropdown-item value="export" .disabled=${off}>
           <ha-svg-icon slot="icon" .path=${mdiDownload}></ha-svg-icon>Export settings
@@ -808,7 +804,10 @@ export class SeSettingsTab extends LitElement {
   render() {
     if (!this.page) return nothing;
     const content = this.devices.some(isLoaded)
-      ? html`${this._data ? this._renderSearch() : nothing}<div class="content">${this._renderContent()}</div>`
+      ? html`${this._data ? this._renderSearch() : nothing}<div class="content">
+          ${displayPicker(this.page.hass, this.devices, this.entryId, (entryId) => this._selectDevice(entryId))}
+          ${this._renderContent()}
+        </div>`
       : html`<div class="content">${noDisplaysCard(this, this.devices)}</div>`;
     return html`
       ${renderPage(this, this.page, content, this._fab(), this._menu())}

@@ -5,7 +5,7 @@
  * Also building blocks used by several tabs.
  */
 import { css, html, nothing, type TemplateResult } from "lit";
-import { mdiChevronDown, mdiCogOutline, mdiDotsVertical, mdiRefresh } from "@mdi/js";
+import { mdiCogOutline, mdiDotsVertical, mdiRefresh } from "@mdi/js";
 import { mdiShellyElevateDisplay } from "./icons";
 import { type DeviceSummary, isLoaded } from "./api";
 import {
@@ -13,6 +13,7 @@ import {
   type HomeAssistant,
   type PickerItem,
   type Route,
+  type SelectedEvent,
   type ValueChangedEvent,
   isDefined,
   navigate,
@@ -43,8 +44,6 @@ export interface PageMenu {
    * instead of a second "Reload …" item). Return false to cancel (e.g. unsaved changes kept).
    */
   onReload?: () => Promise<boolean> | boolean | void;
-  /** Shown in the app bar before the menu (the display picker of the per-display tabs). */
-  picker?: TemplateResult;
 }
 
 const onMenuSelect = async (host: HTMLElement, ev: DropdownSelectEvent, menu?: PageMenu): Promise<void> => {
@@ -56,29 +55,25 @@ const onMenuSelect = async (host: HTMLElement, ev: DropdownSelectEvent, menu?: P
 };
 
 /**
- * App bar content: the overflow menu (same markup as the "⋮" menu of HA config pages), with the
- * page's picker in front of it. `#toolbar-icon` of hass-tabs-subpage is not a flex box, so both
- * share one slotted element.
+ * App bar content: the overflow menu only (same markup as the "⋮" menu of HA config pages). The
+ * app bar holds nothing else, so the tabs stay in the same place on every tab.
  */
-export const toolbarMenu = (host: HTMLElement, menu?: PageMenu) => {
-  const dropdown = html`<ha-dropdown
-    slot=${menu?.picker ? nothing : "toolbar-icon"}
-    placement="bottom-end"
-    @wa-select=${(ev: DropdownSelectEvent) => onMenuSelect(host, ev, menu)}
-  >
-    <ha-icon-button slot="trigger" .label=${"Menu"} .path=${mdiDotsVertical}></ha-icon-button>
-    ${menu?.items ? html`${menu.items}<wa-divider></wa-divider>` : nothing}
-    <ha-dropdown-item value="reload">
-      <ha-svg-icon slot="icon" .path=${mdiRefresh}></ha-svg-icon>
-      Reload
-    </ha-dropdown-item>
-    <ha-dropdown-item value="integration">
-      <ha-svg-icon slot="icon" .path=${mdiCogOutline}></ha-svg-icon>
-      Integration settings
-    </ha-dropdown-item>
-  </ha-dropdown>`;
-  return menu?.picker ? html`<div slot="toolbar-icon" class="toolbar-icons">${menu.picker}${dropdown}</div>` : dropdown;
-};
+export const toolbarMenu = (host: HTMLElement, menu?: PageMenu) => html`<ha-dropdown
+  slot="toolbar-icon"
+  placement="bottom-end"
+  @wa-select=${(ev: DropdownSelectEvent) => onMenuSelect(host, ev, menu)}
+>
+  <ha-icon-button slot="trigger" .label=${"Menu"} .path=${mdiDotsVertical}></ha-icon-button>
+  ${menu?.items ? html`${menu.items}<wa-divider></wa-divider>` : nothing}
+  <ha-dropdown-item value="reload">
+    <ha-svg-icon slot="icon" .path=${mdiRefresh}></ha-svg-icon>
+    Reload
+  </ha-dropdown-item>
+  <ha-dropdown-item value="integration">
+    <ha-svg-icon slot="icon" .path=${mdiCogOutline}></ha-svg-icon>
+    Integration settings
+  </ha-dropdown-item>
+</ha-dropdown>`;
 
 /** Render a tab page. `fab` content must carry `slot="fab"` on its top-level elements. */
 export const renderPage = (
@@ -168,9 +163,9 @@ const pickerItemsFor = (devices: DeviceSummary[]): (() => PickerItem[]) => {
 };
 
 /**
- * Display picker of the per-display tabs (loaded displays only), in the app bar like the log
- * provider picker of Settings → System → Logs: `ha-generic-picker` with a filled button as its
- * field (a searchable popover, a bottom sheet on phones).
+ * Display picker of the per-display tabs (loaded displays only): a picker field at the top of the
+ * page content, like the target picker of the History and Logbook panels (`ha-generic-picker`
+ * with its own field; a searchable popover, a bottom sheet on phones).
  */
 export const displayPicker = (
   hass: HomeAssistant,
@@ -179,17 +174,6 @@ export const displayPicker = (
   onSelect: (entryId: string) => void,
 ) => {
   const loaded = devices.filter(isLoaded);
-  const current = loaded.find((d) => d.entry_id === entryId);
-  const button = (onClick?: (ev: Event) => void) => html`<ha-button
-    slot=${onClick ? "field" : "trigger"}
-    appearance="filled"
-    .disabled=${!loaded.length}
-    @click=${onClick}
-  >
-    <ha-svg-icon slot="start" .path=${mdiShellyElevateDisplay}></ha-svg-icon>
-    ${current?.name ?? "Display"}
-    <ha-svg-icon slot="end" .path=${mdiChevronDown}></ha-svg-icon>
-  </ha-button>`;
   if (isDefined("ha-generic-picker")) {
     return html`<ha-generic-picker
       class="display-picker"
@@ -197,36 +181,44 @@ export const displayPicker = (
       .getItems=${pickerItemsFor(devices)}
       .value=${entryId}
       .rowRenderer=${pickerRow}
+      .valueRenderer=${valueRendererFor(devices)}
+      .disabled=${!loaded.length}
+      hide-clear-icon
       label="Display"
       search-label="Search displays"
       @value-changed=${(ev: ValueChangedEvent<string>) => {
         ev.stopPropagation();
         if (ev.detail?.value) onSelect(ev.detail.value);
       }}
-    >
-      ${button((ev) => {
-        ev.stopPropagation();
-        ((ev.currentTarget as HTMLElement).parentElement as HTMLElement & { open(): void }).open();
-      })}
-    </ha-generic-picker>`;
+    ></ha-generic-picker>`;
   }
-  // Fallback: a menu with the displays.
-  return html`<ha-dropdown
+  // Fallback: a select with the displays.
+  return html`<ha-select
     class="display-picker"
-    placement="bottom-end"
-    @wa-select=${(ev: DropdownSelectEvent) => {
+    label="Display"
+    .options=${loaded.map((d) => ({ value: d.entry_id, label: `${d.name}${d.available ? "" : " (offline)"}` }))}
+    .value=${entryId}
+    @selected=${(ev: SelectedEvent) => {
       ev.stopPropagation();
-      onSelect(ev.detail.item.value);
+      if (ev.detail?.value) onSelect(ev.detail.value);
     }}
-  >
-    ${button()}
-    ${loaded.map(
-      (d) => html`<ha-dropdown-item value=${d.entry_id} .selected=${d.entry_id === entryId}>
-        <ha-svg-icon slot="icon" .path=${mdiShellyElevateDisplay}></ha-svg-icon>
-        ${d.name}${d.available ? nothing : html` (offline)`}
-      </ha-dropdown-item>`,
-    )}
-  </ha-dropdown>`;
+  ></ha-select>`;
+};
+
+/** Selected display in the picker field (name, "Offline" below it, as in the list). */
+const valueRenderers = new WeakMap<DeviceSummary[], (value: string) => TemplateResult>();
+const valueRendererFor = (devices: DeviceSummary[]) => {
+  let fn = valueRenderers.get(devices);
+  if (!fn) {
+    fn = (value: string) => {
+      const d = devices.find((x) => x.entry_id === value);
+      return html`<span slot="headline">${d?.name ?? value}</span>${d && !d.available
+          ? html`<span slot="supporting-text">Offline</span>`
+          : nothing}`;
+    };
+    valueRenderers.set(devices, fn);
+  }
+  return fn;
 };
 
 export const pageStyles = css`
@@ -234,39 +226,20 @@ export const pageStyles = css`
     display: block;
     height: 100%;
   }
-  /* the title keeps to one line when the app bar also holds the display picker (narrow) */
+  /* The menu button of a main page keeps the 24px gap hass-tabs-subpage puts after it; on stock
+     pages (hass-subpage / ha-top-app-bar-fixed, and back-arrow tab pages) the title starts 8px
+     after the 48px button, so pull it back by 16px. */
+  hass-tabs-subpage {
+    --main-title-margin: calc(var(--ha-space-2) - var(--ha-space-6));
+  }
   .header {
     display: block;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .toolbar-icons {
-    display: flex;
-    align-items: center;
-    gap: var(--ha-space-1);
-    min-width: 0;
-  }
-  /* ha-config-logs */
   .display-picker {
-    --md-list-item-leading-icon-color: var(--ha-color-primary-50);
-    --mdc-icon-size: var(--ha-space-6);
-    min-width: 0;
-  }
-  :host([narrow]) .display-picker ha-svg-icon[slot="start"] {
-    display: none;
-  }
-  @media all and (max-width: 870px) {
-    .display-picker {
-      max-width: max(30%, 180px);
-    }
-    .display-picker ha-button {
-      max-width: 100%;
-    }
-    .display-picker ha-button::part(label) {
-      overflow: hidden;
-      white-space: nowrap;
-    }
+    display: block;
   }
   /* search bar below the app bar (ha-config-logs) */
   .search {
