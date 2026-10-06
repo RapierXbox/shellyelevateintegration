@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from homeassistant.config_entries import SOURCE_SYSTEM
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady
@@ -62,6 +63,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     from .panel import async_setup_panel
 
     await async_setup_panel(hass)
+    if not any(is_panel_entry(entry) for entry in hass.config_entries.async_entries(DOMAIN)):
+        # The panel only exists while the integration has an entry: give it its own, so it stays
+        # when the last display is removed (or reverted to stock).
+        hass.async_create_task(hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_SYSTEM}, data={}))
     return True
 
 

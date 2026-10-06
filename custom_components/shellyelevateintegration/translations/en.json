@@ -58,6 +58,10 @@
           "display": "Add a display",
           "panel": "Only add the panel (install ShellyElevate on a new display)"
         }
+      },
+      "wall_display_confirm": {
+        "title": "Shelly Wall Display found",
+        "description": "A Shelly Wall Display was found at {host}. Set it up with Shelly Elevate? If ShellyElevate already runs on it, it is added. Otherwise the Shelly Elevate panel is added to the sidebar, where you can install ShellyElevate on it."
       }
     },
     "error": {

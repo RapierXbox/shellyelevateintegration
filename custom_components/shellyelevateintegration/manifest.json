@@ -31,6 +31,10 @@
   ],
   "version": "0.1.0",
   "zeroconf": [
-    "_shellyelevate._tcp.local."
+    "_shellyelevate._tcp.local.",
+    {
+      "type": "_shelly._tcp.local.",
+      "name": "shellywalldisplay*"
+    }
   ]
 }

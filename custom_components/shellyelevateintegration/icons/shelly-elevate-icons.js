@@ -1,6 +1,7 @@
 // Registers the "shelly-elevate:" icon prefix in the Home Assistant frontend.
 // shelly-elevate:display is the integration's glyph (Wall Display with two chevrons), used as the
-// sidebar icon; tools/make_brand.py draws the same shape for the brand images.
+// sidebar icon. The panel bundle registers the same icon (frontend/src/icons.ts).
+const PREFIX = "shelly-elevate";
 const ICONS = {
   display:
     "M5.5 3h13A2.5 2.5 0 0 1 21 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 18.5v-13A2.5 2.5 0 0 1 5.5 3z" +
@@ -9,7 +10,30 @@ const ICONS = {
 };
 
 window.customIcons = window.customIcons || {};
-window.customIcons["shelly-elevate"] = {
+window.customIcons[PREFIX] = {
   getIcon: async (name) => ({ path: ICONS[name] ?? ICONS.display, viewBox: "0 0 24 24" }),
   getIconList: async () => Object.keys(ICONS).map((name) => ({ name })),
 };
+
+// ha-icon gives up on a prefix that is not registered when it first renders (the sidebar often
+// renders before this script has run) and never looks again. Re-render those icons.
+function* ourIcons(root) {
+  for (const el of root.querySelectorAll("*")) {
+    if (el.localName === "ha-icon" && typeof el.icon === "string" && el.icon.startsWith(`${PREFIX}:`)) yield el;
+    if (el.shadowRoot) yield* ourIcons(el.shadowRoot);
+  }
+}
+
+async function refresh() {
+  for (const el of ourIcons(document)) {
+    if (!el._legacy) continue;
+    const icon = el.icon;
+    el._legacy = false;
+    el.icon = undefined;
+    await el.updateComplete;
+    el.icon = icon;
+  }
+}
+
+refresh();
+for (const delay of [500, 2000, 6000]) setTimeout(refresh, delay);

@@ -58,6 +58,10 @@
           "display": "Display hinzufügen",
           "panel": "Nur das Panel hinzufügen (ShellyElevate auf einem neuen Display installieren)"
         }
+      },
+      "wall_display_confirm": {
+        "title": "Shelly Wall Display gefunden",
+        "description": "Unter {host} wurde ein Shelly Wall Display gefunden. Mit Shelly Elevate einrichten? Läuft ShellyElevate schon darauf, wird es hinzugefügt. Sonst wird das Shelly-Elevate-Panel zur Seitenleiste hinzugefügt, wo du ShellyElevate darauf installieren kannst."
       }
     },
     "error": {

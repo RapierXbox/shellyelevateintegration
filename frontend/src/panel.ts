@@ -15,7 +15,7 @@ import {
   mdiDownloadCircleOutline,
   mdiTune,
 } from "@mdi/js";
-import { mdiShellyElevateDisplay } from "./icons";
+import { mdiShellyElevateDisplay, registerIcons } from "./icons";
 import { type DeviceSummary, ElevateApi, errorMessage, isLoaded } from "./api";
 import { CORE_ELEMENTS, type HomeAssistant, type PanelInfo, type Route, loadHaElements, navigate, onDialogClosed } from "./ha";
 import type { PageContext, PageNavigation } from "./page";
@@ -28,6 +28,9 @@ import "./tabs/install";
 import "./tabs/settings";
 import "./tabs/profiles";
 import "./tabs/backups";
+
+// the sidebar icon, also when the icon script was not loaded yet (integration added without reload)
+registerIcons();
 
 const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "displays", label: "Displays", icon: mdiShellyElevateDisplay },

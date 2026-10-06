@@ -77,6 +77,7 @@ from .settings.profiles import ProfileManager, async_get_profile_manager
 _LOGGER = logging.getLogger(__name__)
 
 CONF_CODE = "code"
+STOCK_SERVICE_TYPE = "_shelly._tcp.local."
 CONF_PROFILE = "profile"
 NO_PROFILE = "__none__"
 
@@ -105,7 +106,7 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_panel(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Only the sidebar panel: no display is needed to install ShellyElevate on one."""
-        await self.async_set_unique_id(PANEL_UNIQUE_ID)
+        await self.async_set_unique_id(PANEL_UNIQUE_ID, raise_on_progress=False)
         self._abort_if_unique_id_configured()
         return self.async_create_entry(title="Shelly Elevate panel", data={CONF_PANEL: True})
 
@@ -141,7 +142,9 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> ConfigFlowResult:
-        """Discovered via mDNS."""
+        """Discovered via mDNS: a display running ShellyElevate, or a stock Wall Display."""
+        if discovery_info.type == STOCK_SERVICE_TYPE:
+            return await self._async_wall_display_discovered(discovery_info)
         props = discovery_info.properties
         device_id = props.get("id")
         if not device_id:
@@ -168,6 +171,41 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason=error)
         self.context["title_placeholders"] = {"name": self._hello.name}
         return await self.async_step_zeroconf_confirm()
+
+    async def _async_wall_display_discovered(self, discovery_info: ZeroconfServiceInfo) -> ConfigFlowResult:
+        """A Wall Display announced by its stock Shelly services.
+
+        Only offered while Shelly Elevate is not set up at all: once it is, the panel is there to
+        install the app, and displays running ShellyElevate are discovered on their own.
+        """
+        if self._async_current_entries(include_ignore=False):
+            return self.async_abort(reason="already_configured")
+        self._host = discovery_info.host
+        await self.async_set_unique_id(f"wall-display-{discovery_info.name.split('.')[0].lower()}")
+        self._abort_if_unique_id_configured()
+        self.context["title_placeholders"] = {"name": "Shelly Wall Display"}
+        return await self.async_step_wall_display_confirm()
+
+    async def async_step_wall_display_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add the display if it runs ShellyElevate already; otherwise add the panel to install it."""
+        if user_input is None:
+            self._set_confirm_only()
+            return self.async_show_form(step_id="wall_display_confirm", description_placeholders={"host": self._host})
+        try:
+            self._hello = await async_probe(async_get_clientsession(self.hass), self._host)
+        except ShellyElevateIntegrationConnectionError:
+            # stock app only: the panel's Install tab puts ShellyElevate on it
+            return await self.async_step_panel()
+        if (error := self._check_api()) is not None:
+            return self.async_abort(reason=error)
+        self._port = self._hello.port
+        await self.async_set_unique_id(self._hello.device_id, raise_on_progress=False)
+        self._abort_if_unique_id_configured()
+        return await self._async_after_probe()
+
+    async def async_step_system(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Created by the integration itself: keep the panel when the last display is removed."""
+        return await self.async_step_panel()
 
     async def async_step_zeroconf_confirm(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Confirm a discovered display."""
