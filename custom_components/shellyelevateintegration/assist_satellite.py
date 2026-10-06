@@ -96,6 +96,9 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
         """Subscribe to voice messages, audio and timers."""
         await super().async_added_to_hass()
         self.async_on_remove(self.device.async_add_message_listener(self._on_message))
+        # the display sent its wake words when it connected, before this entity listened
+        if (cached := self.device.client.voice_config) is not None:
+            self._apply_config(cached)
         self.async_on_remove(self.device.client.subscribe_binary(CHANNEL_AUDIO, self._on_audio))
         assert self.registry_entry is not None
         if self.registry_entry.device_id:
@@ -132,16 +135,21 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
                 self._tts_done.set()
             self.tts_response_finished()
         elif msg_type == "voice.config":
-            self._config = assist_satellite.AssistSatelliteConfiguration(
-                available_wake_words=[
-                    assist_satellite.AssistSatelliteWakeWord(
-                        id=ww["id"], wake_word=ww.get("phrase", ww["id"]), trained_languages=ww.get("languages", [])
-                    )
-                    for ww in message.get("available", [])
-                ],
-                active_wake_words=list(message.get("active", [])),
-                max_active_wake_words=int(message.get("max_active", 1)),
-            )
+            self._apply_config(message)
+
+    @callback
+    def _apply_config(self, message: dict[str, Any]) -> None:
+        """Wake words from a `voice.config` message."""
+        self._config = assist_satellite.AssistSatelliteConfiguration(
+            available_wake_words=[
+                assist_satellite.AssistSatelliteWakeWord(
+                    id=ww["id"], wake_word=ww.get("phrase", ww["id"]), trained_languages=ww.get("languages", [])
+                )
+                for ww in message.get("available", [])
+            ],
+            active_wake_words=list(message.get("active", [])),
+            max_active_wake_words=int(message.get("max_active", 1)),
+        )
 
     @callback
     def _on_audio(self, payload: bytes) -> None:

@@ -47,6 +47,8 @@ class ShellyElevateIntegrationApi(ABC):
         self.info: DeviceInfo | None = None
         self.state: dict[str, Any] = {}
         self.media: MediaStatus = MediaStatus()
+        self.voice_config: dict[str, Any] | None = None
+        """Last `voice.config`; the display sends it on connect, before the satellite entity exists."""
         self.settings: dict[str, Any] = {}
         self._connected = False
         self._state_cbs: list[StateCallback] = []
@@ -149,6 +151,8 @@ class ShellyElevateIntegrationApi(ABC):
     def _emit(self, message: dict[str, Any]) -> None:
         if message.get("type") == "media_status":
             self.media = MediaStatus.from_dict(message.get("status") or {})
+        elif message.get("type") == "voice.config":
+            self.voice_config = message
         elif message.get("type") == "settings_changed":
             self.settings.update(message.get("changes") or {})
         for cb in list(self._event_cbs):

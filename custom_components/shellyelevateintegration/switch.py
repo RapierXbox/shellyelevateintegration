@@ -48,15 +48,17 @@ SETTING_SWITCHES: tuple[ShellyElevateIntegrationSwitchDescription, ...] = (
     _setting_switch("auto_brightness", "automaticBrightness"),
     _setting_switch("wake_on_proximity", "wakeOnProximity"),
     _setting_switch("touch_to_wake", "touchToWake"),
-    _setting_switch("voice_assistant", "voiceAssistantEnabled", enabled=False),
+    # voice and the bluetooth proxy run through this integration (the app's own satellite
+    # and ESPHome proxy were removed)
+    _setting_switch("voice_assistant", "haVoiceEnabled", enabled=False),
     _setting_switch("voice_mute", "voiceAssistantMuted", config=False),
     _setting_switch("wake_word", "voiceWakeEnabled", enabled=False),
-    _setting_switch("bluetooth_proxy", "bluetoothProxyEnabled", enabled=False),
+    _setting_switch("bluetooth_proxy", "bleScannerEnabled", enabled=False),
     _setting_switch("media_enabled", "mediaEnabled", enabled=False),
     _setting_switch("buttons_switch_relays", "buttonRelayEnabled", enabled=False),
     _setting_switch("switch_on_swipe", "switchOnSwipe", enabled=False),
     _setting_switch("legacy_mqtt", "mqttEnabled", enabled=False),
-    _setting_switch("legacy_http_api", "legacyHttpApi", enabled=False),
+    _setting_switch("legacy_http_api", "httpServer", enabled=False),
 )
 
 NIGHT_MODE = ShellyElevateIntegrationSwitchDescription(

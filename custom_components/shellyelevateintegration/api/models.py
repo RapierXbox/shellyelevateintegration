@@ -178,6 +178,10 @@ class SettingDef:
     secret: bool = False
     per_device: bool = False
     requires_restart: bool = False
+    deprecated: bool = False
+    """The setting belongs to a feature the app will remove."""
+    replaced_by: str | None = None
+    """Key of the setting that replaces it, if any."""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SettingDef:

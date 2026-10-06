@@ -67,7 +67,7 @@ LEGACY_SCHEMA: list[dict[str, Any]] = [
     _s("mqttHomeAssistantDiscovery", "bool", True, "mqtt", "MQTT Home Assistant discovery"),
     _s("mqttRetainState", "bool", True, "mqtt", "Retain MQTT state"),
     # voice
-    _s("voiceAssistantEnabled", "bool", False, "voice", "Voice assistant"),
+    _s("voiceAssistantEnabled", "bool", False, "voice", "Voice assistant (own Home Assistant token)"),
     _s("voiceAssistantToken", "string", "", "voice", "Home Assistant token", secret=True),
     _s("voiceAssistantPipelineId", "string", "", "voice", "Assist pipeline id"),
     _s("voiceAssistantMaxRecordSeconds", "int", 10, "voice", "Max recording", min=1, max=60, unit="s"),

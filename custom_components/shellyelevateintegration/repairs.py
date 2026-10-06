@@ -20,13 +20,12 @@ ISSUE_DUPLICATES = "duplicate_devices"
 ISSUE_LEGACY_HTTP = "legacy_http_api"
 ISSUE_APP_DOWN = "app_unreachable"
 
-# v1 settings that create a second Home Assistant device for the same display
-DUPLICATE_SETTINGS = {"mqttHomeAssistantDiscovery": False, "esphomeBluetoothProxy": False}
+# v1 settings that create a second Home Assistant device for the same display: MQTT discovery and
+# the app's deprecated ESPHome proxy (gone after its removal; then the key is simply absent)
+DUPLICATE_SETTINGS = {"mqttHomeAssistantDiscovery": False, "bluetoothProxyEnabled": False}
 
-
-def _legacy_http_key(settings: dict[str, Any]) -> str:
-    """The app's switch for its unauthenticated HTTP API (`httpServer`; older drafts: `legacyHttpApi`)."""
-    return "httpServer" if "httpServer" in settings else "legacyHttpApi"
+LEGACY_HTTP_KEY = "httpServer"
+"""The app's switch for its unauthenticated HTTP API on port 8080."""
 
 
 def _issue_id(kind: str, entry_id: str) -> str:
@@ -83,7 +82,7 @@ def async_check_issues(hass: HomeAssistant, device: ShellyElevateIntegrationDevi
         device,
         any(settings.get(key) not in (None, value) for key, value in DUPLICATE_SETTINGS.items()),
     )
-    _async_update_issue(hass, ISSUE_LEGACY_HTTP, device, bool(settings.get(_legacy_http_key(settings))))
+    _async_update_issue(hass, ISSUE_LEGACY_HTTP, device, bool(settings.get(LEGACY_HTTP_KEY)))
 
 
 @callback
@@ -115,7 +114,7 @@ class SettingsFixFlow(RepairsFlow):
                 changes = {k: v for k, v in DUPLICATE_SETTINGS.items() if k in device.settings}
                 await device.async_set_settings(changes)
             elif self.fix == ISSUE_LEGACY_HTTP:
-                await device.async_set_settings({_legacy_http_key(device.settings): False})
+                await device.async_set_settings({LEGACY_HTTP_KEY: False})
             elif self.fix == ISSUE_APP_DOWN:
                 if device.adb is None:
                     return self.async_abort(reason="no_adb")
