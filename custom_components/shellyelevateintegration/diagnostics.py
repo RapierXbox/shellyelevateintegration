@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .api import ShellyElevateIntegrationError
-from .const import CONF_MAC, CONF_TOKEN
+from .const import CONF_MAC, CONF_TOKEN, is_panel_entry
 from .device import ShellyElevateIntegrationConfigEntry
 from .settings.schema import ALWAYS_SECRET
 
@@ -32,6 +32,8 @@ async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a display."""
+    if is_panel_entry(entry):
+        return {"panel": True}
     device = entry.runtime_data
     data: dict[str, Any] = {
         "entry": {"data": async_redact_data(dict(entry.data), TO_REDACT), "options": dict(entry.options)},

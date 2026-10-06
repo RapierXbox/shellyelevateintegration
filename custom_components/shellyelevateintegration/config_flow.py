@@ -46,6 +46,7 @@ from .const import (
     CONF_FINGERPRINT,
     CONF_LEGACY,
     CONF_MAC,
+    CONF_PANEL,
     CONF_TOKEN,
     DEFAULT_BACKUP_KEEP,
     DEFAULT_THERMOSTAT_MAX_TEMP,
@@ -66,8 +67,10 @@ from .const import (
     OPT_THERMOSTAT_TOLERANCE,
     OPT_UPDATE_CHANNEL,
     OPT_WATCHDOG,
+    PANEL_UNIQUE_ID,
     UPDATE_CHANNEL_BETA,
     UPDATE_CHANNEL_STABLE,
+    is_panel_entry,
 )
 from .settings.profiles import ProfileManager, async_get_profile_manager
 
@@ -95,7 +98,19 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
     # ---------------------------------------------------------------- entry points
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Manual setup."""
+        """Add a display, or only the panel (to install ShellyElevate on a new display)."""
+        if any(is_panel_entry(entry) for entry in self._async_current_entries(include_ignore=False)):
+            return await self.async_step_display()  # the panel is already there
+        return self.async_show_menu(step_id="user", menu_options=["display", "panel"])
+
+    async def async_step_panel(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Only the sidebar panel: no display is needed to install ShellyElevate on one."""
+        await self.async_set_unique_id(PANEL_UNIQUE_ID)
+        self._abort_if_unique_id_configured()
+        return self.async_create_entry(title="Shelly Elevate panel", data={CONF_PANEL: True})
+
+    async def async_step_display(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Manual setup of a display by address."""
         errors: dict[str, str] = {}
         if user_input is not None:
             self._host = user_input[CONF_HOST].strip()
@@ -112,7 +127,7 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured(updates=self._verified_updates(self._hello))
                 return await self._async_after_probe()
         return self.async_show_form(
-            step_id="user",
+            step_id="display",
             data_schema=self.add_suggested_values_to_schema(
                 vol.Schema(
                     {
@@ -405,6 +420,8 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Change host / port."""
         entry = self._get_reconfigure_entry()
+        if is_panel_entry(entry):
+            return self.async_abort(reason="panel_entry")
         errors: dict[str, str] = {}
         if user_input is not None:
             try:
@@ -474,6 +491,12 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_MAC: self._hello.mac,
         }
         return self.async_create_entry(title=self._hello.name, data=data)
+
+    @classmethod
+    @callback
+    def async_supports_options(cls, config_entry: ConfigEntry) -> bool:
+        """The panel-only entry has no options."""
+        return not is_panel_entry(config_entry)
 
     @staticmethod
     @callback

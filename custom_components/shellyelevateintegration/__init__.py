@@ -24,7 +24,7 @@ from .api import (
     ShellyElevateIntegrationError,
     ShellyElevateIntegrationIncompatibleError,
 )
-from .const import CONF_DEVICE_ID, CONF_FINGERPRINT, CONF_LEGACY, CONF_TOKEN, DOMAIN
+from .const import CONF_DEVICE_ID, CONF_FINGERPRINT, CONF_LEGACY, CONF_TOKEN, DOMAIN, is_panel_entry
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .repairs import async_check_issues
 from .services import async_setup_services
@@ -85,7 +85,9 @@ def _platforms(device: ShellyElevateIntegrationDevice) -> list[Platform]:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry) -> bool:
-    """Set up one display."""
+    """Set up one display (the panel-only entry has nothing to set up: async_setup added the panel)."""
+    if is_panel_entry(entry):
+        return True
     client = _create_client(hass, entry)
     try:
         await client.connect()
@@ -146,6 +148,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShellyElevateIntegration
 
 async def async_unload_entry(hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry) -> bool:
     """Unload a display."""
+    if is_panel_entry(entry):
+        return True
     device = entry.runtime_data
     unloaded = await hass.config_entries.async_unload_platforms(entry, _platforms(device))
     if unloaded:

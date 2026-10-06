@@ -25,8 +25,10 @@ Or add it by hand:
 2. Add `https://github.com/RapierXbox/shellyelevateintegration` as type Integration
 3. Search for Shelly Elevate in HACS and download it
 4. Restart Home Assistant
-5. Displays with ShellyElevate are found automatically under Settings → Devices & services.
-   If not, use Add integration → Shelly Elevate and enter the IP.
+5. Go to Settings → Devices & services → Add integration → Shelly Elevate. Pick
+   "Add a display" if ShellyElevate already runs on it, or "Only add the panel" if you still
+   need to put ShellyElevate on a display. Displays with ShellyElevate are also found
+   automatically. The Shelly Elevate panel then shows up in the sidebar (admins only).
 
 ## Putting ShellyElevate on a display
 
@@ -37,7 +39,8 @@ Or add it by hand:
 4. In the Android Developer options, turn on only ADB debugging and ADB over Wi-Fi (port 5555).
    On newer Shelly firmware, also turn on ADB - WiFi in the Shelly developer settings
    (it shows the display's address with port 5555). Note the IP address.
-5. Open Shelly Elevate in the Home Assistant sidebar, go to Install and enter the IP.
+5. Open Shelly Elevate in the Home Assistant sidebar (see step 5 above if it isn't there),
+   go to Install and enter the IP.
 
 Home Assistant installs the app and adds the display. To undo all of it, use
 Revert to stock in the panel.

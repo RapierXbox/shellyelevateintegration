@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Final
+from typing import TYPE_CHECKING, Final
+
+if TYPE_CHECKING:
+    from homeassistant.config_entries import ConfigEntry
 
 DOMAIN: Final = "shellyelevateintegration"
 MANUFACTURER: Final = "Shelly"
@@ -12,6 +15,9 @@ CONF_DEVICE_ID: Final = "device_id"
 CONF_LEGACY: Final = "legacy"
 CONF_MAC: Final = "mac"
 CONF_FINGERPRINT: Final = "cert_sha256"
+CONF_PANEL: Final = "panel"
+"""Marks the entry that only provides the sidebar panel (no display yet)."""
+PANEL_UNIQUE_ID: Final = "_panel"
 """SHA-256 of the display's TLS certificate, pinned at pairing (lowercase hex)."""
 
 # Options
@@ -44,3 +50,8 @@ APP_REPO: Final = "RapierXbox/ShellyElevate"
 
 # Fired on the event bus for every event the display reports (buttons, swipes, ...)
 EVENT_SHELLY_ELEVATE: Final = "shellyelevateintegration_event"
+
+
+def is_panel_entry(entry: ConfigEntry) -> bool:
+    """Whether `entry` is the panel-only entry rather than a display."""
+    return bool(entry.data.get(CONF_PANEL))

@@ -14,7 +14,7 @@ import voluptuous as vol
 
 from .adb.apk import async_get_releases
 from .api import ShellyElevateIntegrationError
-from .const import DOMAIN
+from .const import DOMAIN, is_panel_entry
 from .device import ShellyElevateIntegrationDevice
 from .installer import ProvisionOptions, async_provision, default_dashboard_url
 from .revert import RevertOptions, async_revert, async_revert_check
@@ -26,7 +26,7 @@ from .settings.profiles import async_get_profile_manager
 
 def _device(hass: HomeAssistant, entry_id: str) -> ShellyElevateIntegrationDevice:
     entry = hass.config_entries.async_get_entry(entry_id)
-    if entry is None or entry.domain != DOMAIN or entry.state is not ConfigEntryState.LOADED:
+    if entry is None or entry.domain != DOMAIN or is_panel_entry(entry) or entry.state is not ConfigEntryState.LOADED:
         raise HomeAssistantError(f"Display {entry_id} is not loaded")
     return entry.runtime_data
 
@@ -96,6 +96,8 @@ async def ws_devices(
     """List displays (including not loaded ones)."""
     out = []
     for entry in hass.config_entries.async_entries(DOMAIN):
+        if is_panel_entry(entry):
+            continue
         if entry.state is ConfigEntryState.LOADED:
             out.append(_device_summary(entry.runtime_data))
         else:

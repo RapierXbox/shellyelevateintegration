@@ -2,18 +2,6 @@
   "config": {
     "flow_title": "{name}",
     "step": {
-      "user": {
-        "title": "Add a Shelly Wall Display",
-        "description": "Enter the address of a Shelly Wall Display running ShellyElevate. To install ShellyElevate on a new display, open **Shelly Elevate** in the sidebar and go to **Install**.",
-        "data": {
-          "host": "Host",
-          "port": "Port"
-        },
-        "data_description": {
-          "host": "IP address or hostname of the display.",
-          "port": "Port of the ShellyElevate API (default 8443). Older app versions are found on port 8080 automatically."
-        }
-      },
       "zeroconf_confirm": {
         "title": "Discovered {name}",
         "description": "Do you want to add the {model} **{name}** ({host})? A pairing code will be shown on the display."
@@ -50,6 +38,26 @@
       "upgrade_confirm": {
         "title": "Switch {name} to the new API",
         "description": "**{name}** ({host}) now runs a ShellyElevate version with the native Home Assistant API. Pair it to get authentication, push updates, the voice assistant and the Bluetooth proxy. A pairing code will be shown on the display."
+      },
+      "display": {
+        "title": "Add a Shelly Wall Display",
+        "description": "Enter the address of a Shelly Wall Display running ShellyElevate. To install ShellyElevate on a new display, open **Shelly Elevate** in the sidebar and go to **Install**.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the display.",
+          "port": "Port of the ShellyElevate API (default 8443). Older app versions are found on port 8080 automatically."
+        }
+      },
+      "user": {
+        "title": "Shelly Elevate",
+        "description": "Add a Shelly Wall Display that already runs ShellyElevate, or only add the Shelly Elevate panel to the sidebar. From the panel you can install ShellyElevate on a new display.",
+        "menu_options": {
+          "display": "Add a display",
+          "panel": "Only add the panel (install ShellyElevate on a new display)"
+        }
       }
     },
     "error": {
@@ -68,7 +76,8 @@
       "wrong_device": "This address belongs to a different display.",
       "not_upgraded": "The display still runs an older ShellyElevate version without pairing.",
       "upgrade_successful": "The display now uses the new API.",
-      "certificate_mismatch": "The display presents a different security certificate than the one Home Assistant paired with. Pair it again."
+      "certificate_mismatch": "The display presents a different security certificate than the one Home Assistant paired with. Pair it again.",
+      "panel_entry": "The panel has nothing to reconfigure."
     }
   },
   "options": {
