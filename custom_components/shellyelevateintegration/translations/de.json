@@ -661,7 +661,7 @@
         },
         "settings": {
           "name": "Einstellungen",
-          "description": "Zu schreibende Einstellungen, z. B. {\"screenSaverDelay\": 60}."
+          "description": "Zu schreibende Einstellungen als Schlüssel/Wert-Paare, z. B. screenSaverDelay: 60."
         }
       }
     },

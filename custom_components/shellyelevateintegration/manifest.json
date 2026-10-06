@@ -6,6 +6,7 @@
     "assist_satellite",
     "bluetooth",
     "frontend",
+    "intent",
     "media_source",
     "panel_custom"
   ],
@@ -26,7 +27,7 @@
     "adb_shell"
   ],
   "requirements": [
-    "adb-shell[async]==0.4.4"
+    "adb-shell[async]>=0.4.4"
   ],
   "version": "0.1.0",
   "zeroconf": [

@@ -661,7 +661,7 @@
         },
         "settings": {
           "name": "Settings",
-          "description": "Settings to write, e.g. {\"screenSaverDelay\": 60}."
+          "description": "Settings to write as key/value pairs, for example screenSaverDelay: 60."
         }
       }
     },

@@ -1,53 +1,53 @@
 # Shelly Elevate for Home Assistant
 
-A HACS integration for **Shelly Wall Displays running [ShellyElevate](https://github.com/RapierXbox/ShellyElevate)**.
-Each display is one Home Assistant device: relays, sensors, the screen, a media player, an Assist
-voice satellite, a Bluetooth proxy, settings, backups, profiles, app updates and an optional
-thermostat. A sidebar panel manages the fleet, installs the app over ADB and can revert a display
-to the stock Shelly app.
+Home Assistant integration for Shelly Wall Displays running [ShellyElevate](https://github.com/RapierXbox/ShellyElevate).
 
-The display keeps working without Home Assistant; every Home Assistant feature is optional.
+Every display shows up as one device with its relays, sensors, screen, media player, voice
+assistant and Bluetooth proxy. You can also back up and copy display settings, update the app,
+and use a display relay as a thermostat. The sidebar panel lets you install ShellyElevate on a
+new display over ADB, or put a display back to the stock Shelly app.
 
-## Requirements
+The display still works fine without Home Assistant.
 
-- Home Assistant **2026.8** or newer
-- [HACS](https://hacs.xyz/docs/use/) installed in Home Assistant
-- A Shelly Wall Display on the same network (with ShellyElevate, or install it from the panel below)
+## What you need
 
-## Installation (HACS)
+- Home Assistant 2026.8 or newer
+- [HACS](https://hacs.xyz/docs/use/)
+- A Shelly Wall Display in the same network
 
-[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=RapierXbox&repository=shellyelevateintegration&category=integration)
+## Install
 
-Or by hand:
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=RapierXbox&repository=shellyelevateintegration&category=integration)
 
-1. In Home Assistant open **HACS**, then the **⋮** menu (top right) → **Custom repositories**.
-2. Repository: `https://github.com/RapierXbox/shellyelevateintegration`, type: **Integration** → **Add**.
-3. Search HACS for **Shelly Elevate**, open it and select **Download**.
-4. Restart Home Assistant (**Settings → System → ⋮ → Restart Home Assistant**).
-5. Displays running ShellyElevate are discovered automatically (**Settings → Devices & services**).
-   Otherwise add one with **Add integration → Shelly Elevate** and enter its IP address.
-   The **Shelly Elevate** panel appears in the sidebar for administrators.
+Or add it by hand:
 
-Updates show up in HACS like any other integration.
+1. HACS → ⋮ (top right) → Custom repositories
+2. Add `https://github.com/RapierXbox/shellyelevateintegration` as type Integration
+3. Search for Shelly Elevate in HACS and download it
+4. Restart Home Assistant
+5. Displays with ShellyElevate are found automatically under Settings → Devices & services.
+   If not, use Add integration → Shelly Elevate and enter the IP.
 
-## Installing ShellyElevate on a display
+## Putting ShellyElevate on a display
 
-1. Connect the display to Wi-Fi in the Shelly settings under **Network**.
+1. Connect the display to Wi-Fi in the Shelly settings under Network.
 2. Update the display to the newest Shelly firmware.
-3. Unlock the Android settings: in the Shelly settings open **General → About device** and tap
-   Firmware (F) and Hardware (H) in the order **F H F F H F H H**.
-4. In the Android *Developer options*, enable only **ADB debugging** and **ADB over Wi-Fi**
-   (port 5555). On newer Shelly firmware, also turn on **ADB - WiFi** in the Shelly developer
-   settings (it shows the display's address with port 5555). Note the display's IP address.
-5. Open **Shelly Elevate** in the Home Assistant sidebar, go to **Install** and enter the IP.
+3. In the Shelly settings open General → About device and tap Firmware (F) and Hardware (H)
+   in this order: F H F F H F H H. This unlocks the Android settings.
+4. In the Android Developer options, turn on only ADB debugging and ADB over Wi-Fi (port 5555).
+   On newer Shelly firmware, also turn on ADB - WiFi in the Shelly developer settings
+   (it shows the display's address with port 5555). Note the IP address.
+5. Open Shelly Elevate in the Home Assistant sidebar, go to Install and enter the IP.
 
-Home Assistant installs the app, applies your default profile and adds the display. To undo
-everything, use **Revert to stock…** in the panel.
+Home Assistant installs the app and adds the display. To undo all of it, use
+Revert to stock in the panel.
 
 ## Building the panel
 
 ```bash
-cd frontend && npm ci && npm run build
+cd frontend
+npm ci
+npm run build
 ```
 
 ## License
