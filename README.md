@@ -45,6 +45,12 @@ Or add it by hand:
 Home Assistant installs the app and adds the display. To undo all of it, use
 Revert to stock in the panel.
 
+## Versions
+
+Every change to the integration that lands on main is released automatically as the next patch
+version (0.1.0, 0.1.1, ...), and HACS shows it as an update. Minor and major versions are released
+by hand: Actions → Release → Run workflow.
+
 ## Building the panel
 
 ```bash

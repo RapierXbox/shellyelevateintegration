@@ -1,23 +1,91 @@
 name: Release
 
+# Every push to main that changes the integration publishes a new version:
+# the patch number goes up (0.1.0 -> 0.1.1), manifest.json is updated, the commit is tagged
+# and a GitHub release with the zip is published, so HACS offers it as an update.
+# For a minor or major release, run this workflow by hand (Actions -> Release -> Run workflow).
+
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - "custom_components/**"
+      - "hacs.json"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Part of the version to raise
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 permissions:
   contents: write
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
-  zip:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check manifest version matches the tag
+        with:
+          fetch-depth: 0
+
+      - name: Work out the version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump || 'patch' }}
         run: |
-          VERSION=$(python3 -c "import json;print(json.load(open('custom_components/shellyelevateintegration/manifest.json'))['version'])")
-          test "v$VERSION" = "${GITHUB_REF_NAME}" || test "$VERSION" = "${GITHUB_REF_NAME}"
-      - name: Zip integration
+          python3 - <<'EOF'
+          import json, os, subprocess
+
+          path = "custom_components/shellyelevateintegration/manifest.json"
+          manifest = json.load(open(path, encoding="utf-8"))
+          current = manifest["version"]
+          tagged = subprocess.run(["git", "tag", "--list", f"v{current}"], capture_output=True, text=True).stdout.strip()
+          if not tagged:
+              version = current  # this version was never released yet: release it as it is
+          else:
+              major, minor, patch = (int(part) for part in current.split("."))
+              bump = os.environ["BUMP"]
+              if bump == "major":
+                  major, minor, patch = major + 1, 0, 0
+              elif bump == "minor":
+                  minor, patch = minor + 1, 0
+              else:
+                  patch += 1
+              version = f"{major}.{minor}.{patch}"
+          manifest["version"] = version
+          with open(path, "w", encoding="utf-8") as file:
+              json.dump(manifest, file, indent=2, ensure_ascii=False)
+              file.write("\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"version={version}\n")
+          EOF
+
+      - name: Commit and tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet; then
+            git commit -am "Release v$VERSION"
+          fi
+          # someone may have pushed in the meantime; tag only what ends up on main
+          git pull --rebase origin main
+          git tag "v$VERSION"
+          git push origin HEAD:main "v$VERSION"
+
+      - name: Zip the integration
         run: cd custom_components/shellyelevateintegration && zip -r ../../shellyelevateintegration.zip . -x "__pycache__/*"
+
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
           files: shellyelevateintegration.zip
