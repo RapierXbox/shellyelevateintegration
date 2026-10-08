@@ -18,6 +18,8 @@ export interface DeviceSummary {
   legacy?: boolean;
   available: boolean;
   adb?: boolean;
+  /** Only present when the entry is loaded. */
+  capabilities?: Capabilities;
   /** Config entry state, only present when the entry is not loaded. */
   state?: string;
 }
@@ -35,6 +37,23 @@ export interface SettingOption {
   label: string;
 }
 
+/** Counts (relays, inputs, buttons) and flags (proximity, speaker, ...) of a display. */
+export type Capabilities = Record<string, number | boolean | null>;
+
+/** `visible_if` condition: the value of another setting equals / differs from / is one of. */
+export interface VisibleIf {
+  key: string;
+  eq?: unknown;
+  ne?: unknown;
+  in?: unknown[];
+}
+
+/** `requires` entry: a capability that is truthy, or at least `min`. */
+export interface Requirement {
+  cap: string;
+  min?: number;
+}
+
 export interface SettingDef {
   key: string;
   type: SettingType | string;
@@ -50,6 +69,18 @@ export interface SettingDef {
   secret?: boolean;
   per_device?: boolean;
   requires_restart?: boolean;
+  /** Belongs to a feature the app will remove. */
+  deprecated?: boolean;
+  /** Key of the setting that replaces it. */
+  replaced_by?: string | null;
+  /** Shown only while all conditions hold. */
+  visible_if?: VisibleIf[] | null;
+  /** Shown only on displays with these capabilities. */
+  requires?: Requirement[] | null;
+  /** Never shown. */
+  hidden?: boolean;
+  /** Shown but not editable. */
+  read_only?: boolean;
 }
 
 export type Settings = Record<string, unknown>;
@@ -59,6 +90,11 @@ export interface SettingsGetResult {
   schema: SettingDef[];
   per_device: string[];
   secret: string[];
+  capabilities?: Capabilities;
+  /** Capabilities the display reports; `requires` on any other one counts as met. */
+  known_caps?: string[];
+  /** Settings the integration controls itself (key -> reason), shown read-only. */
+  managed?: Record<string, string>;
 }
 
 /** Keys that are never copied between displays (IDs, names, ...). */

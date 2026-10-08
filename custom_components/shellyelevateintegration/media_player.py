@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import logging
 from typing import Any
 
 from homeassistant.components import media_source
@@ -26,6 +27,8 @@ from homeassistant.util import dt as dt_util
 from .api import MediaStatus
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .entity import ShellyElevateIntegrationEntity, ShellyElevateIntegrationEntityDescription
+
+_LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
 
@@ -106,6 +109,14 @@ class ShellyElevateIntegrationMediaPlayer(ShellyElevateIntegrationEntity, MediaP
             self.async_write_ha_state()
         elif message.get("type") == "settings_changed" and "mediaEnabled" in (message.get("changes") or {}):
             self.async_write_ha_state()
+        elif message.get("type") == "event" and message.get("event") == "media_error":
+            _LOGGER.warning(
+                "%s could not play %s (error %s, extra %s)",
+                self.device.entry.title,
+                message.get("url") or "media",
+                message.get("what"),
+                message.get("extra"),
+            )
 
     @property
     def _media(self) -> MediaStatus:
@@ -113,10 +124,10 @@ class ShellyElevateIntegrationMediaPlayer(ShellyElevateIntegrationEntity, MediaP
 
     @property
     def available(self) -> bool:
-        """Legacy app: playback must be enabled in the settings."""
+        """Playback must be enabled in the settings (off by default on v1 displays)."""
         if not super().available:
             return False
-        return not self.device.legacy or bool(self.device.settings.get("mediaEnabled", True))
+        return bool(self.device.settings.get("mediaEnabled", self.device.legacy))
 
     @property
     def state(self) -> MediaPlayerState:

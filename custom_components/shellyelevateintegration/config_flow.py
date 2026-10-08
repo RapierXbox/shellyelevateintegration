@@ -29,6 +29,7 @@ from .api import (
     Capabilities,
     Hello,
     LegacyClient,
+    SettingDef,
     ShellyElevateIntegrationApi,
     ShellyElevateIntegrationCertificateError,
     ShellyElevateIntegrationClient,
@@ -319,6 +320,8 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
                 if err.code == "expired":
                     self._pairing_id = None
                     errors["base"] = "pairing_expired"
+                elif err.code == "rate_limited":
+                    errors["base"] = "rate_limited"
                 else:
                     errors[CONF_CODE] = "invalid_code"
             except ShellyElevateIntegrationConnectionError:
@@ -339,6 +342,8 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
                 )
             except ShellyElevateIntegrationCertificateError:
                 return self.async_abort(reason="certificate_mismatch")
+            except ShellyElevateIntegrationPairingError as err:
+                return self.async_abort(reason="rate_limited" if err.code == "rate_limited" else "cannot_connect")
             except ShellyElevateIntegrationError:
                 return self.async_abort(reason="cannot_connect")
         return self.async_show_form(
@@ -404,7 +409,17 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
             client = ShellyElevateIntegrationClient(
                 session, self._host, self._port, self._token or "", self._hello.fingerprint
             )
-        changes = manager.settings_for_device(profile_id, None)
+        # only keys this display knows like services.async_profile_diff
+        known = set(await client.get_settings())
+        schema: list[SettingDef] | None = None
+        if not self._hello.legacy:
+            try:
+                schema = await client.get_settings_schema()
+            except ShellyElevateIntegrationError as err:
+                _LOGGER.debug("Could not fetch the settings schema of %s: %s", self._host, err)
+            if schema:
+                known &= {item.key for item in schema}
+        changes = manager.settings_for_device(profile_id, schema, known)
         if changes:
             await client.set_settings(changes)
 

@@ -14,6 +14,7 @@ import voluptuous as vol
 
 from .adb.apk import async_get_releases
 from .api import ShellyElevateIntegrationError
+from .api.legacy_schema import LEGACY_CAPS
 from .const import DOMAIN, is_panel_entry
 from .device import ShellyElevateIntegrationDevice
 from .installer import ProvisionOptions, async_provision, default_dashboard_url
@@ -61,6 +62,35 @@ def _guess_type(value: Any) -> str:
     if isinstance(value, list):
         return "string_list"
     return "string"
+
+
+REMOVED_KEYS = frozenset(
+    {
+        "bluetoothProxyEnabled",
+        "bluetoothProxyName",
+        "voiceAssistantEnabled",
+        "voiceAssistantToken",
+        "voiceAssistantPipelineId",
+        "deprecatedMigrationPrompted",
+    }
+)
+"""Keys of features the app removed (RemovedSettings.java); never listed as undescribed settings."""
+
+
+def _managed_settings(device: ShellyElevateIntegrationDevice, keys: set[str]) -> dict[str, str]:
+    """Settings the integration controls itself (key -> reason), shown read-only in the panel."""
+    managed: dict[str, str] = {}
+    if device.legacy:
+        # older apps use the mqtt id as the display id
+        managed["mqttDeviceId"] = "Identifies the display in Home Assistant"
+        managed["httpServer"] = "Home Assistant connects to this display through the legacy HTTP server"
+    else:
+        managed["integrationApiEnabled"] = "Turning it off disconnects this display from Home Assistant"
+    if device.voice_enabled:
+        reason = "Set by the wake word of the Assist satellite in Home Assistant"
+        managed["voiceWakeEnabled"] = reason
+        managed["voiceWakeModelName"] = reason
+    return {key: reason for key, reason in managed.items() if key in keys}
 
 
 type _CommandFn = Callable[[HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], Awaitable[dict[str, Any]]]
@@ -116,17 +146,23 @@ async def ws_settings_get(
     await device.async_refresh_settings()
     schema = await device.async_get_schema()
     known = {item.key for item in schema or ()}
-    # Keys the display has but the schema does not describe are still editable as raw values.
+    # undescribed keys stay editable as raw values in a collapsed section of the panel
     extra = [
         {"key": k, "type": _guess_type(v), "category": "other", "label": k}
         for k, v in device.settings.items()
-        if k not in known
+        if k not in known and k not in REMOVED_KEYS
     ]
+    capabilities = device.info.capabilities.as_dict()
+    capabilities.pop("optional_relays_from", None)
     return {
         "settings": device.settings,
         "schema": [item.as_dict() for item in schema or ()] + extra,
         "per_device": sorted(schema_util.per_device_keys(schema)),
         "secret": sorted(schema_util.secret_keys(schema)),
+        "capabilities": capabilities,
+        # requires on a capability outside this list counts as met
+        "known_caps": sorted(LEGACY_CAPS if device.legacy else capabilities),
+        "managed": _managed_settings(device, known | set(device.settings)),
     }
 
 

@@ -8,8 +8,8 @@ from typing import Any
 from homeassistant.config_entries import SOURCE_SYSTEM
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady
-from homeassistant.helpers import config_validation as cv
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError, ConfigEntryNotReady, HomeAssistantError
+from homeassistant.helpers import config_validation as cv, entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.setup import async_setup_component
@@ -25,7 +25,15 @@ from .api import (
     ShellyElevateIntegrationError,
     ShellyElevateIntegrationIncompatibleError,
 )
-from .const import CONF_DEVICE_ID, CONF_FINGERPRINT, CONF_LEGACY, CONF_TOKEN, DOMAIN, is_panel_entry
+from .const import (
+    CONF_DEVICE_ID,
+    CONF_FEATURES_AUTO_ENABLED,
+    CONF_FINGERPRINT,
+    CONF_LEGACY,
+    CONF_TOKEN,
+    DOMAIN,
+    is_panel_entry,
+)
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .repairs import async_check_issues
 from .services import async_setup_services
@@ -113,6 +121,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShellyElevateIntegration
         await client.disconnect()
         raise ConfigEntryNotReady(str(err)) from err
 
+    if not client.legacy and client.info is not None and entry.unique_id and client.info.device_id != entry.unique_id:
+        # the app keeps its id for good so a different id is a different display
+        await client.disconnect()
+        raise ConfigEntryError(
+            translation_domain=DOMAIN,
+            translation_key="device_id_mismatch",
+            translation_placeholders={
+                "host": entry.data[CONF_HOST],
+                "actual": client.info.device_id,
+                "expected": entry.unique_id,
+            },
+        )
+
     device = ShellyElevateIntegrationDevice(hass, entry, client)
     entry.runtime_data = device
     try:
@@ -121,6 +142,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShellyElevateIntegration
         from .adb.manager import async_get_adb_manager
 
         device.adb = await async_get_adb_manager(hass, device)
+        if not device.legacy:
+            from .permissions import PermissionGuard
+
+            device.permissions = PermissionGuard(device)
 
         device.backups = BackupManager(device, await async_get_backup_store(hass))
         device.backups.async_start()
@@ -130,17 +155,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShellyElevateIntegration
         device.voice_enabled = device.info.capabilities.voice and await async_setup_component(
             hass, "assist_satellite", {}
         )
+        if not device.legacy and not entry.data.get(CONF_FEATURES_AUTO_ENABLED):
+            await _async_auto_enable_features(hass, device)
         await hass.config_entries.async_forward_entry_setups(entry, _platforms(device))
 
-        if device.info.capabilities.bluetooth and not device.legacy and "bluetooth" in hass.config.components:
-            from .bluetooth import async_setup_bluetooth
+        if device.info.capabilities.bluetooth and not device.legacy:
+            if "bluetooth" in hass.config.components:
+                from .bluetooth import async_setup_bluetooth
 
-            entry.async_on_unload(await async_setup_bluetooth(hass, device))
+                entry.async_on_unload(await async_setup_bluetooth(hass, device))
+            else:
+                _LOGGER.info("Not using %s as a Bluetooth proxy: the Bluetooth integration is not loaded", entry.title)
     except Exception:
         await device.async_shutdown()
         raise
 
     async_check_issues(hass, device)
+    if device.permissions is not None:
+        device.permissions.async_start()
+        entry.async_on_unload(device.permissions.async_stop)
 
     @callback
     def _recheck(message: dict[str, Any]) -> None:
@@ -149,6 +182,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShellyElevateIntegration
 
     entry.async_on_unload(device.async_add_message_listener(_recheck))
     return True
+
+
+async def _async_auto_enable_features(hass: HomeAssistant, device: ShellyElevateIntegrationDevice) -> None:
+    """Turn on media, the Bluetooth proxy and voice once on a newly added display.
+
+    They are off on the display by default but only work through this integration. Runs once
+    per entry so a feature the user turns off later stays off.
+    """
+    caps = device.info.capabilities
+    wanted = {
+        "mediaEnabled": caps.speaker,
+        "bleScannerEnabled": caps.bluetooth and "bluetooth" in hass.config.components,
+        "haVoiceEnabled": device.voice_enabled,
+    }
+    known = await device.async_known_keys()
+    changes = {key: True for key, want in wanted.items() if want and key in known and device.settings.get(key) is False}
+    if changes:
+        try:
+            await device.async_set_settings(changes)
+        except HomeAssistantError as err:
+            _LOGGER.warning("Could not turn on %s on %s: %s", ", ".join(changes), device.entry.title, err)
+            return  # tried again on the next setup
+        _LOGGER.info("Turned on %s on %s", ", ".join(changes), device.entry.title)
+    # their switches were created disabled before so enable those the user did not touch
+    registry = er.async_get(hass)
+    for key in ("media_enabled", "bluetooth_proxy", "voice_assistant"):
+        entity_id = registry.async_get_entity_id(Platform.SWITCH, DOMAIN, f"{device.device_id}_{key}")
+        if (
+            entity_id is not None
+            and (reg_entry := registry.async_get(entity_id)) is not None
+            and reg_entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
+        ):
+            registry.async_update_entity(entity_id, disabled_by=None)
+    hass.config_entries.async_update_entry(device.entry, data={**device.entry.data, CONF_FEATURES_AUTO_ENABLED: True})
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry) -> bool:

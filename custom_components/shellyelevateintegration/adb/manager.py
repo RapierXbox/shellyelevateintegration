@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 import io
 import logging
@@ -34,6 +35,19 @@ WATCHDOG_DELAY = 120
 WATCHDOG_MAX_DELAY = 1800
 WATCHDOG_RESTARTS = 3
 _BROADCAST_DATA = re.compile(r'Broadcast completed: result=-?\d+, data="([0-9a-fA-F]{64})"')
+
+
+@dataclass(frozen=True, slots=True)
+class PermissionGrant:
+    """Result of AdbManager.async_grant_permissions."""
+
+    granted: list[str]
+    """Permissions (short names) and `location_mode` that were missing before and are not now."""
+    missing: list[str]
+    """Still missing afterwards."""
+    failed: list[str]
+    """Step ids whose command reported a failure."""
+    restarted: bool
 
 
 class AdbError(HomeAssistantError):
@@ -86,10 +100,10 @@ class AdbManager:
             finally:
                 await _close(device)
 
-    async def async_is_reachable(self) -> bool:
+    async def async_is_reachable(self, *, auth_timeout: float = 5) -> bool:
         """Whether an authorized ADB session can be opened."""
         try:
-            await self.async_shell("true")
+            await self.async_shell("true", auth_timeout=auth_timeout)
         except AdbError:
             return False
         return True
@@ -113,28 +127,39 @@ class AdbManager:
         """Run several commands in one session. Returns step -> output."""
 
         async def _run(device: AdbDeviceAsync) -> dict[str, str]:
-            results: dict[str, str] = {}
-            for step_id, command in commands:
-                if progress:
-                    progress(step_id, {"status": "running", "command": command})
-                try:
-                    output = await device.shell(command, transport_timeout_s=60, read_timeout_s=60, timeout_s=120)
-                    if steps.looks_failed(output):
-                        # most shell tools exit 0 over ADB; the output tells
-                        raise _StepFailed(output.strip()[-300:])
-                except Exception as err:
-                    if progress:
-                        progress(step_id, {"status": "failed", "error": str(err), "command": command})
-                    if fatal:
-                        raise
-                    _LOGGER.debug("ADB step %s failed on %s: %s", step_id, self.host, err)
-                    continue
-                results[step_id] = output
-                if progress:
-                    progress(step_id, {"status": "done", "output": output.strip()[-500:]})
-            return results
+            return await self._run_steps(device, commands, progress, fatal=fatal)
 
         return await self.async_session(_run, auth_timeout=auth_timeout)
+
+    async def _run_steps(
+        self,
+        device: AdbDeviceAsync,
+        commands: list[tuple[str, str]],
+        progress: ProgressCallback | None = None,
+        *,
+        fatal: bool = False,
+    ) -> dict[str, str]:
+        """Run commands on an open session. Returns step -> output of the steps that worked."""
+        results: dict[str, str] = {}
+        for step_id, command in commands:
+            if progress:
+                progress(step_id, {"status": "running", "command": command})
+            try:
+                output = await device.shell(command, transport_timeout_s=60, read_timeout_s=60, timeout_s=120)
+                if steps.looks_failed(output):
+                    # most shell tools exit 0 over ADB; the output tells
+                    raise _StepFailed(output.strip()[-300:])
+            except Exception as err:
+                if progress:
+                    progress(step_id, {"status": "failed", "error": str(err), "command": command})
+                if fatal:
+                    raise
+                _LOGGER.debug("ADB step %s failed on %s: %s", step_id, self.host, err)
+                continue
+            results[step_id] = output
+            if progress:
+                progress(step_id, {"status": "done", "output": output.strip()[-500:]})
+        return results
 
     async def async_platform(self, progress: ProgressCallback | None = None) -> steps.Platform:
         """Android version, serial number and root of the display."""
@@ -257,6 +282,40 @@ class AdbManager:
         else:
             await self.async_run_steps(steps.restart_app_commands(), progress)
         return release
+
+    async def async_grant_permissions(self, *, restart: bool = True, auth_timeout: float = 5) -> PermissionGrant:
+        """Grant the permissions the app needs (as after an install) and report what changed.
+
+        The app reads some permissions only at start, so it is restarted when a runtime
+        permission or the location mode changed (and `restart` is set).
+        """
+
+        async def _run(device: AdbDeviceAsync) -> PermissionGrant:
+            platform = steps.parse_platform(
+                await device.shell(steps.PLATFORM_CHECK, transport_timeout_s=30, read_timeout_s=30)
+            )
+            before = steps.parse_permission_check(
+                await device.shell(steps.PERMISSION_CHECK, transport_timeout_s=30, read_timeout_s=30)
+            )
+            commands = steps.permission_commands(sdk=platform.sdk)
+            done = await self._run_steps(device, commands)
+            after = steps.parse_permission_check(
+                await device.shell(steps.PERMISSION_CHECK, transport_timeout_s=30, read_timeout_s=30)
+            )
+            still_missing = after.missing(platform.sdk)
+            granted = [name for name in before.missing(platform.sdk) if name not in still_missing]
+            restarted = False
+            if granted and restart:
+                await self._run_steps(device, steps.restart_app_commands())
+                restarted = True
+            return PermissionGrant(
+                granted=granted,
+                missing=still_missing,
+                failed=[step_id for step_id, _ in commands if step_id not in done],
+                restarted=restarted,
+            )
+
+        return await self.async_session(_run, auth_timeout=auth_timeout)
 
     async def async_provision(
         self, token: str, client_id: str, client_name: str, settings: dict[str, Any] | None = None

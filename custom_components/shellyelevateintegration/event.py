@@ -1,4 +1,4 @@
-"""Event entities: physical buttons, power button, swipe gestures."""
+"""Event entities: physical buttons, wired inputs, power button, swipe gestures."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
-from .entity import ShellyElevateIntegrationEntity, ShellyElevateIntegrationEntityDescription
+from .entity import ShellyElevateIntegrationEntity, ShellyElevateIntegrationEntityDescription, indexed_name
 
 PARALLEL_UPDATES = 0
 
@@ -43,6 +43,7 @@ async def async_setup_entry(
     entities: list[EventEntity] = [
         ShellyElevateIntegrationButtonEvent(device, "button", idx) for idx in range(caps.buttons)
     ]
+    entities += [ShellyElevateIntegrationButtonEvent(device, "input", idx, caps.inputs) for idx in range(caps.inputs)]
     if caps.power_button:
         entities.append(ShellyElevateIntegrationButtonEvent(device, "power_button", None))
     entities.append(ShellyElevateIntegrationSwipeEvent(device))
@@ -76,15 +77,19 @@ class _ShellyElevateIntegrationEvent(ShellyElevateIntegrationEntity, EventEntity
 
 
 class ShellyElevateIntegrationButtonEvent(_ShellyElevateIntegrationEvent):
-    """A physical button (XL) or the power button."""
+    """A physical button (XL), a wired input in button mode or the power button."""
 
     _attr_device_class = EventDeviceClass.BUTTON
     _attr_event_types = PRESS_TYPES
 
-    def __init__(self, device: ShellyElevateIntegrationDevice, kind: str, index: int | None) -> None:
+    def __init__(self, device: ShellyElevateIntegrationDevice, kind: str, index: int | None, count: int = 0) -> None:
         """Initialize."""
         if kind == "power_button":
             desc = ShellyElevateIntegrationEventDescription(key="power_button", translation_key="power_button")
+        elif kind == "input":
+            desc = ShellyElevateIntegrationEventDescription(
+                key=f"input_{index}", **indexed_name("input", index or 0, count)
+            )
         else:
             desc = ShellyElevateIntegrationEventDescription(
                 key=f"button_{index}",

@@ -32,6 +32,9 @@
       },
       "backup_settings": {
         "default": "mdi:content-save-cog"
+      },
+      "grant_permissions": {
+        "default": "mdi:shield-check"
       }
     },
     "event": {

@@ -4,7 +4,6 @@
   "after_dependencies": [
     "assist_pipeline",
     "assist_satellite",
-    "bluetooth",
     "frontend",
     "intent",
     "media_source",
@@ -15,6 +14,7 @@
   ],
   "config_flow": true,
   "dependencies": [
+    "bluetooth",
     "http",
     "websocket_api"
   ],

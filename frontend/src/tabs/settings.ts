@@ -26,6 +26,7 @@ import { dialogStyles, sharedStyles } from "../styles";
 import { confirmDialog, define, downloadJson, formatValue, plural, selectEntry, slug, toast, toastError } from "../ui";
 import type { KeyOption } from "../components/key-picker";
 import "../components/key-picker";
+import { type Visibility, VisibilityEvaluator, visibilityHint } from "../visibility";
 
 const CATEGORY_LABELS: Record<string, string> = {
   general: "General",
@@ -37,9 +38,14 @@ const CATEGORY_LABELS: Record<string, string> = {
   bluetooth: "Bluetooth",
   media: "Media",
   advanced: "Advanced",
-  other: "Other (not described by the display)",
 };
 const CATEGORY_ORDER = Object.keys(CATEGORY_LABELS);
+/** Categories shown as collapsed cards after the others. */
+const COLLAPSED: Record<string, { header: string; secondary: string }> = {
+  deprecated: { header: "Deprecated", secondary: "Settings of features the app will remove" },
+  other: { header: "Not described by the display", secondary: "Raw values the settings schema does not know" },
+};
+const COLLAPSED_ORDER = Object.keys(COLLAPSED);
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
@@ -197,7 +203,18 @@ export class SeSettingsTab extends LitElement {
   }
 
   private get _dirty(): boolean {
-    return this._editCount > 0 || this._invalid.size > 0;
+    return this._editCount > 0 || this._blockingInvalid.length > 0;
+  }
+
+  /** Visibility of the settings with the unsaved edits applied (build again after edits). */
+  private _evaluator(): VisibilityEvaluator | null {
+    return this._data ? new VisibilityEvaluator(this._data, (key) => this._value(key)) : null;
+  }
+
+  /** Invalid inputs of shown settings; one of a setting that is not shown cannot block saving. */
+  private get _blockingInvalid(): string[] {
+    const ev = this._evaluator();
+    return [...this._invalid].filter((key) => !ev || ev.visible(key));
   }
 
   private _resetEdits(): void {
@@ -285,8 +302,10 @@ export class SeSettingsTab extends LitElement {
   }
 
   private async _save(): Promise<void> {
-    if (!this._data || this._loading || this._loadedFor !== this.entryId || this._invalid.size) return;
+    if (!this._data || this._loading || this._loadedFor !== this.entryId || this._blockingInvalid.length) return;
     const changes = { ...this._edits };
+    // the last valid value of an input that is invalid now and no longer shown is not what the user typed
+    for (const key of this._invalid) delete changes[key];
     const keys = Object.keys(changes);
     if (!keys.length) return;
     this._saving = true;
@@ -312,7 +331,10 @@ export class SeSettingsTab extends LitElement {
   private _portableKeyOptions(): KeyOption[] {
     if (!this._data) return [];
     const perDevice = perDeviceKeys(this._data);
-    return this._data.schema.filter((d) => !perDevice.has(d.key)).map((d) => ({ key: d.key, label: d.label ?? d.key }));
+    // not gated on visibility: a profile may carry settings for features that are off here
+    return this._data.schema
+      .filter((d) => !perDevice.has(d.key) && !d.hidden && !d.read_only)
+      .map((d) => ({ key: d.key, label: d.label ?? d.key }));
   }
 
   private _openDialog(dialog: Exclude<Dialog, "">): void {
@@ -410,13 +432,13 @@ export class SeSettingsTab extends LitElement {
 
   // ------------------------------------------------------------------ rendering: editor
 
-  private _renderControl(def: SettingDef) {
+  private _renderControl(def: SettingDef, locked: boolean) {
     const value = this._value(def.key);
     const invalid = this._invalid.has(def.key);
     const secret = def.secret || this._data?.secret.includes(def.key);
     const label = def.label ?? def.key;
     // read-only while the settings are (re)loaded: edits would be dropped by the load
-    const disabled = this._loading;
+    const disabled = this._loading || locked;
     switch (def.type) {
       case "bool":
         return html`<ha-switch
@@ -484,56 +506,95 @@ export class SeSettingsTab extends LitElement {
   }
 
   /** One setting as a list row (headline, supporting text, control at the end) like Backup → Settings. */
-  private _renderField(def: SettingDef) {
+  private _renderField(def: SettingDef, vis: Visibility, ev: VisibilityEvaluator) {
     const invalid = this._invalid.has(def.key);
     const perDevice = def.per_device || this._data?.per_device.includes(def.key);
+    const managed = this._data?.managed?.[def.key];
     const range =
       (def.type === "int" || def.type === "float") && (def.min != null || def.max != null)
         ? `${def.min ?? "…"} – ${def.max ?? "…"}${def.unit ? ` ${def.unit}` : ""}`
         : "";
+    const replacement = def.replaced_by ? (ev.def(def.replaced_by)?.label ?? def.replaced_by) : "";
     const notes = [
       def.key,
       range,
       perDevice ? "Per display" : "",
       def.requires_restart ? "Requires an app restart" : "",
+      replacement ? `Replaced by ${replacement}` : "",
     ].filter(Boolean);
+    // only search results are rendered while not visible: they show why instead of a usable control
+    const lockReason = !vis.visible
+      ? visibilityHint(vis)
+      : (managed ?? (def.read_only ? "Read-only" : ""));
     return html`
-      <ha-list-item-base>
+      <ha-list-item-base class=${vis.visible ? "" : "unavailable"}>
         <span slot="headline">${def.label || def.key}</span>
         <span slot="supporting-text"
-          >${def.description ? html`${def.description}<br />` : nothing}${notes.join(" · ")}${invalid
+          >${def.description ? html`${def.description}<br />` : nothing}${notes.join(" · ")}${lockReason
+            ? html`<br /><span class="lock">${lockReason}</span>`
+            : nothing}${invalid
             ? html`<br /><span class="error">Invalid value${range ? ` (${range})` : ""}</span>`
             : nothing}</span
         >
-        <div slot="end" class="end">${this._renderControl(def)}</div>
+        <div slot="end" class="end">${this._renderControl(def, !!lockReason)}</div>
       </ha-list-item-base>
     `;
   }
 
-  /** One card per category, like the cards of Settings → System → Backups → Settings. */
+  private _renderRows(defs: SettingDef[], ev: VisibilityEvaluator) {
+    return html`<ha-list-base class="rows">${defs.map((d) => this._renderField(d, ev.get(d.key), ev))}</ha-list-base>`;
+  }
+
+  /**
+   * One card per category, like the cards of Settings → System → Backups → Settings. Settings that
+   * cannot be configured right now are left out; a search also finds them, shown disabled with why.
+   */
   private _renderCategories(data: SettingsGetResult) {
+    const ev = this._evaluator();
+    if (!ev) return nothing;
     const f = this._filter.trim().toLowerCase();
     const groups = new Map<string, SettingDef[]>();
     for (const def of data.schema) {
+      if (def.hidden) continue;
       if (f && !def.key.toLowerCase().includes(f) && !(def.label ?? "").toLowerCase().includes(f)) continue;
-      const cat = def.category || "other";
+      if (!f && !ev.visible(def.key)) continue;
+      const cat = def.deprecated ? "deprecated" : def.category || "general";
       groups.set(cat, [...(groups.get(cat) ?? []), def]);
     }
     const rank = (c: string) => (CATEGORY_ORDER.includes(c) ? CATEGORY_ORDER.indexOf(c) : 99);
-    const cats = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
-    if (!cats.length) {
-      return html`<ha-card><div class="card-content">No settings match “${this._filter}”.</div></ha-card>`;
+    const cats = [...groups.keys()]
+      .filter((c) => !(c in COLLAPSED))
+      .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+    const collapsed = COLLAPSED_ORDER.filter((c) => groups.has(c));
+    if (!cats.length && !collapsed.length) {
+      return f
+        ? html`<ha-card><div class="card-content">No settings match “${this._filter}”.</div></ha-card>`
+        : nothing;
     }
-    return cats.map(
-      (cat) => html`
-        <ha-card>
-          <h1 class="card-header">${categoryLabel(cat)}</h1>
-          <div class="card-content list">
-            <ha-list-base class="rows">${(groups.get(cat) ?? []).map((d) => this._renderField(d))}</ha-list-base>
-          </div>
-        </ha-card>
-      `,
-    );
+    return html`
+      ${cats.map(
+        (cat) => html`
+          <ha-card>
+            <h1 class="card-header">${categoryLabel(cat)}</h1>
+            <div class="card-content list">${this._renderRows(groups.get(cat) ?? [], ev)}</div>
+          </ha-card>
+        `,
+      )}
+      ${collapsed.map(
+        (cat) => html`
+          <ha-card>
+            <ha-expansion-panel
+              class="collapsed"
+              .header=${COLLAPSED[cat].header}
+              .secondary=${COLLAPSED[cat].secondary}
+              .expanded=${!!f}
+            >
+              ${this._renderRows(groups.get(cat) ?? [], ev)}
+            </ha-expansion-panel>
+          </ha-card>
+        `,
+      )}
+    `;
   }
 
   /** Reload / export / copy / save as profile in the toolbar menu (like "Upload backup" on Backups). */
@@ -583,7 +644,8 @@ export class SeSettingsTab extends LitElement {
   /** Search bar below the app bar, as on Settings → System → Logs, with the display picker at its end. */
   private _renderSearch() {
     const onFilter = (e: Event) => (this._filter = inputValue(e));
-    const placeholder = this._data ? `Search ${plural(this._data.schema.length, "setting")}` : "Search settings";
+    const count = this._data?.schema.filter((d) => !d.hidden).length ?? 0;
+    const placeholder = this._data ? `Search ${plural(count, "setting")}` : "Search settings";
     return html`<div class="search">
       ${isDefined("ha-input-search")
         ? html`<ha-input-search
@@ -796,7 +858,7 @@ export class SeSettingsTab extends LitElement {
       slot="fab"
       size="l"
       .loading=${this._saving}
-      ?disabled=${this._saving || this._loading || !this._editCount || this._invalid.size > 0}
+      ?disabled=${this._saving || this._loading || !this._editCount || this._blockingInvalid.length > 0}
       @click=${this._save}
     >
       <ha-svg-icon slot="start" .path=${mdiContentSave}></ha-svg-icon>Save
@@ -845,6 +907,17 @@ export class SeSettingsTab extends LitElement {
       }
       .unit {
         color: var(--secondary-text-color);
+      }
+      .lock {
+        font-style: italic;
+      }
+      .unavailable [slot="headline"] {
+        color: var(--disabled-text-color);
+      }
+      /* collapsed cards: the panel header takes the place of the card header */
+      ha-expansion-panel.collapsed {
+        --expansion-panel-summary-padding: var(--ha-space-2) var(--ha-space-4);
+        --expansion-panel-content-padding: 0;
       }
       ha-form + ha-alert,
       ha-form + sep-key-picker {

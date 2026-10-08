@@ -26,7 +26,7 @@ MODELS: dict[str, tuple[str, str, int, int, int, bool, bool]] = {
     "BLAKE": ("SAWD-3A1XE10EU2", "Wall Display XL", 2, 1, 4, True, True),
     "MAVERICK": ("SAWD-4A1XE10US0", "Wall Display U1", 1, 1, 0, True, True),
     "JENNA": ("SAWD-5A1XX10EU0", "Wall Display X2i", 2, 1, 0, True, True),
-    "CALLY": ("SAWD-6A1XX10EU0", "Wall Display X1i", 2, 1, 0, True, True),
+    "CALLY": ("SAWD-6A1XX10EU0", "Wall Display X1i", 2, 1, 4, True, True),
     "DAYNA": ("SAWD-6A0XX0EU0", "Wall Display D1", 0, 0, 0, True, True),
 }
 
@@ -182,11 +182,25 @@ class SettingDef:
     """The setting belongs to a feature the app will remove."""
     replaced_by: str | None = None
     """Key of the setting that replaces it, if any."""
+    visible_if: list[dict[str, Any]] | None = None
+    """Conditions on other settings ({"key", "eq" | "ne" | "in"}); all must hold to show it."""
+    requires: list[dict[str, Any]] | None = None
+    """Capabilities it needs ({"cap"} truthy or {"cap", "min"} at least min)."""
+    hidden: bool = False
+    """Never shown in an editor."""
+    read_only: bool = False
+    """Shown but not editable."""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SettingDef:
         """Build from a `SettingDef` object, ignoring unknown keys."""
-        return cls(**_known_fields(cls, data))
+        values = _known_fields(cls, data)
+        # malformed rules are dropped so one bad item does not break the schema
+        for name in ("visible_if", "requires"):
+            rules = values.get(name)
+            if rules is not None:
+                values[name] = [rule for rule in rules if isinstance(rule, dict)] if isinstance(rules, list) else None
+        return cls(**values)
 
     def as_dict(self) -> dict[str, Any]:
         """Return a dict."""

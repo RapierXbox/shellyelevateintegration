@@ -55,10 +55,12 @@ const PROVISION_LABELS: Record<string, string> = {
   cleanup: "Clean up",
   perm_audio: "Grant microphone permission",
   perm_location: "Grant location permission",
+  location_on: "Turn on location",
   perm_bt_scan: "Grant Bluetooth scan permission",
   perm_bt_connect: "Grant Bluetooth connect permission",
   write_settings: "Allow changing system settings",
   overlay: "Allow drawing over other apps",
+  usage_stats: "Allow reading the app in front",
   doze_whitelist: "Exclude from battery optimisation",
   disable_stock: "Keep the stock Shelly app in the background",
   stop: "Stop the app",
@@ -78,10 +80,12 @@ const NON_FATAL = new Set([
   "adb_key",
   "perm_audio",
   "perm_location",
+  "location_on",
   "perm_bt_scan",
   "perm_bt_connect",
   "write_settings",
   "overlay",
+  "usage_stats",
   "doze_whitelist",
   "disable_stock",
   "stop",
@@ -90,6 +94,8 @@ const NON_FATAL = new Set([
 
 /** Steps that only run from Android 12 (API 31) on. */
 const ANDROID_12_STEPS = new Set(["perm_bt_scan", "perm_bt_connect"]);
+/** Steps that only run before Android 12: older versions return no BLE scan results without location. */
+const BEFORE_ANDROID_12_STEPS = new Set(["perm_location", "location_on"]);
 const ANDROID_12 = 31;
 
 /** Final steps; steps the initial list does not know are inserted before them. */
@@ -120,7 +126,17 @@ const HOST_RE = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?!$)|$)){4}$|^[a-zA-Z0-9]
 const provisionStepsFor = (opts: ProvisionOptions): StepState[] => {
   const ids = ["adb_connect", "root_check", "dev_settings", "adb_enabled", "adb_wifi", "adb_tcp"];
   if (opts.install_app) ids.push("download", "push", "install", "cleanup");
-  ids.push("perm_audio", "perm_location", "perm_bt_scan", "perm_bt_connect", "write_settings", "overlay", "doze_whitelist");
+  ids.push(
+    "perm_audio",
+    "perm_location",
+    "location_on",
+    "perm_bt_scan",
+    "perm_bt_connect",
+    "write_settings",
+    "overlay",
+    "usage_stats",
+    "doze_whitelist",
+  );
   if (opts.disable_stock) ids.push("disable_stock");
   ids.push("start", ...FINAL_STEPS);
   return ids.map((id) => ({ id, label: PROVISION_LABELS[id] ?? id, status: "pending" }));
@@ -420,6 +436,10 @@ export class SeInstallTab extends LitElement {
     // The Bluetooth permissions only exist from Android 12 on; older displays never run them.
     if (ev.step === "root_check" && ev.status === "done" && "sdk" in ev && !((ev.sdk ?? 0) >= ANDROID_12)) {
       steps = steps.filter((s) => !ANDROID_12_STEPS.has(s.id));
+    }
+    // the location permission and turning location on only run before android 12
+    if (ev.step === "root_check" && ev.status === "done" && (ev.sdk ?? 0) >= ANDROID_12) {
+      steps = steps.filter((s) => !BEFORE_ANDROID_12_STEPS.has(s.id));
     }
     const idx = this._stepIndex(steps, ev.step);
     const step = steps[idx];

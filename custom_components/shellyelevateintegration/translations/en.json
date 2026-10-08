@@ -68,11 +68,13 @@
       "cannot_connect": "Could not connect to the display.",
       "invalid_code": "Invalid pairing code. Check the code shown on the display.",
       "pairing_expired": "The code expired. A new code is now shown on the display.",
+      "rate_limited": "Too many pairing attempts. Wait a minute, then try again.",
       "profile_failed": "The profile could not be applied."
     },
     "abort": {
       "already_configured": "This display is already configured.",
       "cannot_connect": "Could not connect to the display.",
+      "rate_limited": "Too many pairing attempts. Wait a minute, then try again.",
       "not_shellyelevateintegration": "This is not a ShellyElevate display.",
       "incompatible_api": "This ShellyElevate version uses an incompatible API version. Update the integration or the app.",
       "reauth_successful": "Paired again successfully.",
@@ -156,7 +158,7 @@
         "step": {
           "confirm": {
             "title": "Turn off duplicate integrations on {name}",
-            "description": "MQTT discovery, the ESPHome-compatible Bluetooth proxy, or both are enabled on the display. They create a second Home Assistant device for the same display. This integration already provides everything, so they will be turned off. You can then delete the old MQTT/ESPHome device."
+            "description": "MQTT discovery, the ESPHome-compatible Bluetooth proxy, or both are enabled on the display. They create a second Home Assistant device for the same display. This integration already provides everything, so they will be turned off; the Bluetooth proxy then runs through this integration. You can then delete the old MQTT/ESPHome device."
           }
         },
         "abort": {
@@ -198,6 +200,27 @@
           "cannot_connect": "The change could not be sent to the display."
         }
       }
+    },
+    "permissions_missing": {
+      "title": "ShellyElevate on {name} is missing permissions",
+      "fix_flow": {
+        "step": {
+          "permissions": {
+            "title": "Grant permissions on {name}",
+            "description": "The display reports: {problems}. Home Assistant grants the missing permissions over ADB (microphone, location and Bluetooth as needed, and location turned on for Bluetooth scans) and restarts the app if anything changed."
+          },
+          "enable_adb": {
+            "title": "Enable ADB on {name}",
+            "description": "The display reports: {problems}. These permissions can only be granted over ADB, which is not enabled for this display.\n\n1. On the display, turn on **ADB over Wi‑Fi** in the ShellyElevate settings, or enable **ADB debugging** and **ADB over Wi‑Fi** (port 5555) in the Android developer options. On newer Shelly firmware, also turn on **ADB - WiFi** in the Shelly developer settings.\n2. Submit to connect to {host}:5555. If the display asks whether to allow debugging, allow it and choose to always allow this computer.\n\nHome Assistant then grants the permissions and turns on **Use ADB** in the integration options."
+          }
+        },
+        "abort": {
+          "not_loaded": "The display is not connected.",
+          "cannot_connect": "The permissions could not be granted: {error}",
+          "adb_unreachable": "Home Assistant could not open an ADB session to {host}:5555. Enable ADB over Wi‑Fi on the display as described and try again.",
+          "still_missing": "Android did not grant: {missing}. Grant it on the display under Android settings → Apps → ShellyElevate → Permissions."
+        }
+      }
     }
   },
   "entity": {
@@ -233,11 +256,40 @@
       },
       "backup_settings": {
         "name": "Back up settings"
+      },
+      "grant_permissions": {
+        "name": "Grant permissions"
       }
     },
     "event": {
       "button": {
         "name": "Button {index}",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "single": "Single press",
+              "double": "Double press",
+              "triple": "Triple press",
+              "long": "Long press"
+            }
+          }
+        }
+      },
+      "input": {
+        "name": "Input {index} press",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "single": "Single press",
+              "double": "Double press",
+              "triple": "Triple press",
+              "long": "Long press"
+            }
+          }
+        }
+      },
+      "input_single": {
+        "name": "Input press",
         "state_attributes": {
           "event_type": {
             "state": {
@@ -322,7 +374,7 @@
       "screensaver_type": {
         "name": "Screensaver",
         "state": {
-          "off": "Off",
+          "off": "Screen off",
           "clock": "Clock",
           "clock_date": "Clock and date",
           "always_on": "Always-on display"
@@ -458,6 +510,9 @@
     "incompatible_api": {
       "message": "Incompatible ShellyElevate API: {error}"
     },
+    "device_id_mismatch": {
+      "message": "The display at {host} reports the id {actual}, but this entry belongs to the display {expected}. Add it as a new display, or reconfigure this entry with the right address."
+    },
     "cannot_connect": {
       "message": "Could not connect to the display at {host}."
     },
@@ -508,6 +563,12 @@
     },
     "no_install_method": {
       "message": "This display can only be updated with ADB enabled."
+    },
+    "app_update_failed": {
+      "message": "The app could not update itself: {reason}"
+    },
+    "permissions_still_missing": {
+      "message": "Still missing after granting over ADB: {missing}"
     },
     "screenshot_unsupported": {
       "message": "Screenshots need a newer app version or ADB."

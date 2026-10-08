@@ -9,7 +9,8 @@ from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .device import ShellyElevateIntegrationConfigEntry
+from .api import SettingDef
+from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .entity import (
     ShellyElevateIntegrationEntity,
     ShellyElevateIntegrationEntityDescription,
@@ -24,7 +25,7 @@ PARALLEL_UPDATES = 0
 class ShellyElevateIntegrationNumberDescription(ShellyElevateIntegrationEntityDescription, NumberEntityDescription):
     """Number description."""
 
-    # Write the value as float instead of int.
+    # Write the value as float instead of int (the display schema overrides it).
     is_float: bool = False
 
 
@@ -57,21 +58,23 @@ def _num(
     )
 
 
+# ranges are those of protocol v1 and only apply when the display sends no schema
 NUMBERS: tuple[ShellyElevateIntegrationNumberDescription, ...] = (
-    _num("screensaver_delay", "screenSaverDelay", 5, 3600, 5, UnitOfTime.SECONDS, mode=NumberMode.BOX),
+    _num("screensaver_delay", "screenSaverDelay", 5, 86400, 5, UnitOfTime.SECONDS, mode=NumberMode.BOX),
     _num("min_brightness", "minBrightness", 0, 255),
     _num("screensaver_brightness", "screenSaverMinBrightness", 0, 255, enabled=False),
     _num(
         "proximity_keep_awake",
         "proximityKeepAwakeSeconds",
         0,
-        3600,
+        86400,
         5,
         UnitOfTime.SECONDS,
         enabled=False,
         mode=NumberMode.BOX,
     ),
-    _num("wake_word_sensitivity", "voiceWakeSensitivity", 0, 1, 0.05, enabled=False, is_float=True),
+    # 0..100 on v1 and a 0..1 float on the legacy app (from its schema)
+    _num("wake_word_sensitivity", "voiceWakeSensitivity", 0, 100, 1, enabled=False),
     _num("voice_max_record", "voiceAssistantMaxRecordSeconds", 1, 60, 1, UnitOfTime.SECONDS, enabled=False),
 )
 
@@ -80,13 +83,41 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up numbers."""
-    async_add_entities(build_entities(entry.runtime_data, NUMBERS, ShellyElevateIntegrationSettingNumber))
+    device = entry.runtime_data
+    schema = {item.key: item for item in await device.async_get_schema() or []}
+    async_add_entities(
+        build_entities(
+            device,
+            NUMBERS,
+            lambda dev, desc: ShellyElevateIntegrationSettingNumber(dev, desc, schema.get(desc.setting_key or "")),
+        )
+    )
 
 
 class ShellyElevateIntegrationSettingNumber(ShellyElevateIntegrationEntity, NumberEntity):
     """A numeric display setting."""
 
     entity_description: ShellyElevateIntegrationNumberDescription
+
+    def __init__(
+        self,
+        device: ShellyElevateIntegrationDevice,
+        description: ShellyElevateIntegrationNumberDescription,
+        definition: SettingDef | None = None,
+    ) -> None:
+        """Initialize; range and type come from the display schema when it has the setting."""
+        super().__init__(device, description)
+        self._is_float = description.is_float
+        if definition is None:
+            return
+        if definition.min is not None:
+            self._attr_native_min_value = definition.min
+        if definition.max is not None:
+            self._attr_native_max_value = definition.max
+        if definition.step is not None:
+            self._attr_native_step = definition.step
+        if definition.type in ("int", "float"):
+            self._is_float = definition.type == "float"
 
     @property
     def native_value(self) -> float | None:
@@ -96,4 +127,4 @@ class ShellyElevateIntegrationSettingNumber(ShellyElevateIntegrationEntity, Numb
 
     async def async_set_native_value(self, value: float) -> None:
         """Write the setting."""
-        await self.async_set_setting(value if self.entity_description.is_float else int(value))
+        await self.async_set_setting(value if self._is_float else round(value))

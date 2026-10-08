@@ -208,7 +208,7 @@ class BackupManager:
         """Snapshot the cached settings."""
         info = self.device.info
         return self.store.add(
-            info.device_id,
+            self.device.device_id,
             self.device.settings,
             reason=reason,
             fw_version=info.fw_version,
@@ -228,8 +228,8 @@ class BackupManager:
         """Backups, newest first."""
         return self.store.list(self.device.device_id)
 
-    def _restore_target(self, settings: dict[str, Any], keys: list[str] | None) -> dict[str, Any]:
-        known = set(self.device.settings)
+    async def _async_restore_target(self, settings: dict[str, Any], keys: list[str] | None) -> dict[str, Any]:
+        known = await self.device.async_known_keys()
         return {k: v for k, v in settings.items() if k in known and (keys is None or k in keys)}
 
     async def async_restore(self, backup_id: str | None = None, keys: list[str] | None = None) -> list[dict[str, Any]]:
@@ -240,7 +240,7 @@ class BackupManager:
     async def async_apply(self, settings: dict[str, Any], keys: list[str] | None = None) -> list[dict[str, Any]]:
         """Write the changed, known keys of `settings` after a safety snapshot. Returns the diff."""
         await self.device.async_refresh_settings()
-        changes = diff(self.device.settings, self._restore_target(settings, keys))
+        changes = diff(self.device.settings, await self._async_restore_target(settings, keys))
         if not changes:
             return []
         self.snapshot(REASON_BEFORE_RESTORE)

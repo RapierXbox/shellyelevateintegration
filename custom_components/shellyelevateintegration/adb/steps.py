@@ -164,6 +164,81 @@ SIGNATURE_MISMATCH = "INSTALL_FAILED_UPDATE_INCOMPATIBLE"
 """`pm install` output when the installed app was signed with another key (old builds)."""
 
 
+def runtime_permissions(sdk: int | None) -> list[tuple[str, str]]:
+    """(step id, permission) of the runtime permissions the app needs on this Android version."""
+    perms = [("perm_audio", "android.permission.RECORD_AUDIO")]
+    if sdk is None or sdk < ANDROID_12:
+        # the manifest only requests location up to android 11 where ble scans need it
+        perms.append(("perm_location", "android.permission.ACCESS_FINE_LOCATION"))
+    if sdk is not None and sdk >= ANDROID_12:
+        # these permissions only exist from Android 12 on
+        perms += [
+            ("perm_bt_scan", "android.permission.BLUETOOTH_SCAN"),
+            ("perm_bt_connect", "android.permission.BLUETOOTH_CONNECT"),
+        ]
+    return perms
+
+
+def needs_location_mode(sdk: int | None) -> bool:
+    """Whether BLE scans need location turned on (before Android 12 they return nothing while it is off)."""
+    return sdk is None or sdk < ANDROID_12
+
+
+def permission_commands(*, sdk: int | None = None) -> list[tuple[str, str]]:
+    """Grant the runtime permissions and app ops, turn location on and exempt the app from doze.
+
+    Shared by the installer and the permission repair; every command is idempotent and
+    failures are not fatal.
+    """
+    pkg = APP_PACKAGE
+    steps = [(step_id, f"pm grant {pkg} {perm}") for step_id, perm in runtime_permissions(sdk)]
+    if needs_location_mode(sdk):
+        steps.append(("location_on", "settings put secure location_mode 3"))
+    steps += [
+        ("write_settings", f"appops set {pkg} WRITE_SETTINGS allow"),
+        ("overlay", f"appops set {pkg} SYSTEM_ALERT_WINDOW allow"),
+        # the app display module reads the app in front from usage stats
+        ("usage_stats", f"appops set {pkg} GET_USAGE_STATS allow"),
+        ("doze_whitelist", f"dumpsys deviceidle whitelist +{pkg}"),
+    ]
+    return steps
+
+
+PERMISSION_CHECK = (
+    f"dumpsys package {APP_PACKAGE} | grep -E 'android.permission.[A-Z_]+: granted=true';"
+    " echo location_mode=$(settings get secure location_mode)"
+)
+"""Read-only: the granted permissions of the app and the location mode."""
+
+_GRANTED = re.compile(r"android\.permission\.([A-Z_]+): granted=true")
+
+
+@dataclass(frozen=True, slots=True)
+class PermissionState:
+    """What PERMISSION_CHECK found."""
+
+    granted: frozenset[str]
+    location_on: bool | None
+    """None when the location mode could not be read."""
+
+    def missing(self, sdk: int | None) -> list[str]:
+        """Runtime permissions (short names) and `location_mode` that are still missing."""
+        missing = [perm.rsplit(".", 1)[-1] for _, perm in runtime_permissions(sdk)]
+        missing = [name for name in missing if name not in self.granted]
+        if needs_location_mode(sdk) and self.location_on is False:
+            missing.append("location_mode")
+        return missing
+
+
+def parse_permission_check(output: str) -> PermissionState:
+    """Parse the PERMISSION_CHECK output."""
+    mode = parse_baseline(output).get("location_mode", "")
+    return PermissionState(
+        granted=frozenset(_GRANTED.findall(output)),
+        location_on=int(mode) != 0 if mode.isdigit() else None,
+    )
+
+
 def post_install_commands(*, sdk: int | None = None, disable_stock: bool = False) -> list[tuple[str, str]]:
     """ADB shell commands run after installing the app. Failures are not fatal.
 
@@ -171,22 +246,7 @@ def post_install_commands(*, sdk: int | None = None, disable_stock: bool = False
     the stock package (and it is the only home app), so it is only kept from drawing on top and
     stopped there; older ones disable it, which leaves no home app.
     """
-    pkg = APP_PACKAGE
-    steps = [
-        ("perm_audio", f"pm grant {pkg} android.permission.RECORD_AUDIO"),
-        ("perm_location", f"pm grant {pkg} android.permission.ACCESS_FINE_LOCATION"),
-    ]
-    if sdk is not None and sdk >= ANDROID_12:
-        # these permissions only exist from Android 12 on
-        steps += [
-            ("perm_bt_scan", f"pm grant {pkg} android.permission.BLUETOOTH_SCAN"),
-            ("perm_bt_connect", f"pm grant {pkg} android.permission.BLUETOOTH_CONNECT"),
-        ]
-    steps += [
-        ("write_settings", f"appops set {pkg} WRITE_SETTINGS allow"),
-        ("overlay", f"appops set {pkg} SYSTEM_ALERT_WINDOW allow"),
-        ("doze_whitelist", f"dumpsys deviceidle whitelist +{pkg}"),
-    ]
+    steps = permission_commands(sdk=sdk)
     if disable_stock:
         if sdk is not None and sdk >= ANDROID_11:
             command = f"appops set {STOCK_PACKAGE} SYSTEM_ALERT_WINDOW deny; am force-stop {STOCK_PACKAGE}"

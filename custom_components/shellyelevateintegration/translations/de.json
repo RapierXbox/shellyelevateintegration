@@ -68,11 +68,13 @@
       "cannot_connect": "Verbindung zum Display fehlgeschlagen.",
       "invalid_code": "Ungültiger Kopplungscode. Prüfe den Code auf dem Display.",
       "pairing_expired": "Der Code ist abgelaufen. Auf dem Display wird jetzt ein neuer Code angezeigt.",
+      "rate_limited": "Zu viele Kopplungsversuche. Warte eine Minute und versuche es dann erneut.",
       "profile_failed": "Das Profil konnte nicht angewendet werden."
     },
     "abort": {
       "already_configured": "Dieses Display ist bereits eingerichtet.",
       "cannot_connect": "Verbindung zum Display fehlgeschlagen.",
+      "rate_limited": "Zu viele Kopplungsversuche. Warte eine Minute und versuche es dann erneut.",
       "not_shellyelevateintegration": "Dies ist kein ShellyElevate-Display.",
       "incompatible_api": "Diese ShellyElevate-Version verwendet eine inkompatible API-Version. Aktualisiere die Integration oder die App.",
       "reauth_successful": "Erfolgreich erneut gekoppelt.",
@@ -156,7 +158,7 @@
         "step": {
           "confirm": {
             "title": "Doppelte Integrationen auf {name} deaktivieren",
-            "description": "MQTT-Discovery, der ESPHome-kompatible Bluetooth-Proxy oder beide sind auf dem Display aktiviert. Sie erzeugen ein zweites Home Assistant-Gerät für dasselbe Display. Diese Integration bietet bereits alles, daher werden sie deaktiviert. Anschließend kannst du das alte MQTT-/ESPHome-Gerät löschen."
+            "description": "MQTT-Discovery, der ESPHome-kompatible Bluetooth-Proxy oder beide sind auf dem Display aktiviert. Sie erzeugen ein zweites Home Assistant-Gerät für dasselbe Display. Diese Integration bietet bereits alles, daher werden sie deaktiviert; der Bluetooth-Proxy läuft dann über diese Integration. Anschließend kannst du das alte MQTT-/ESPHome-Gerät löschen."
           }
         },
         "abort": {
@@ -198,6 +200,27 @@
           "cannot_connect": "Die Änderung konnte nicht an das Display gesendet werden."
         }
       }
+    },
+    "permissions_missing": {
+      "title": "ShellyElevate auf {name} fehlen Berechtigungen",
+      "fix_flow": {
+        "step": {
+          "permissions": {
+            "title": "Berechtigungen auf {name} erteilen",
+            "description": "Das Display meldet: {problems}. Home Assistant erteilt die fehlenden Berechtigungen über ADB (Mikrofon, Standort und Bluetooth nach Bedarf, dazu wird der Standort für Bluetooth-Scans eingeschaltet) und startet die App neu, wenn sich etwas geändert hat."
+          },
+          "enable_adb": {
+            "title": "ADB auf {name} aktivieren",
+            "description": "Das Display meldet: {problems}. Diese Berechtigungen können nur über ADB erteilt werden, und ADB ist für dieses Display nicht aktiviert.\n\n1. Schalte auf dem Display in den ShellyElevate-Einstellungen **ADB über WLAN** ein, oder aktiviere in den Android-Entwickleroptionen **ADB-Debugging** und **ADB über WLAN** (Port 5555). Bei neuerer Shelly-Firmware zusätzlich **ADB - WiFi** in den Shelly-Entwicklereinstellungen einschalten.\n2. Sende das Formular ab, um dich mit {host}:5555 zu verbinden. Fragt das Display, ob Debugging erlaubt werden soll, erlaube es und wähle, diesem Computer immer zu vertrauen.\n\nHome Assistant erteilt dann die Berechtigungen und aktiviert **ADB verwenden** in den Integrationsoptionen."
+          }
+        },
+        "abort": {
+          "not_loaded": "Das Display ist nicht verbunden.",
+          "cannot_connect": "Die Berechtigungen konnten nicht erteilt werden: {error}",
+          "adb_unreachable": "Home Assistant konnte keine ADB-Sitzung zu {host}:5555 öffnen. Aktiviere ADB über WLAN auf dem Display wie beschrieben und versuche es erneut.",
+          "still_missing": "Android hat nicht erteilt: {missing}. Erteile die Berechtigung auf dem Display unter Android-Einstellungen → Apps → ShellyElevate → Berechtigungen."
+        }
+      }
     }
   },
   "entity": {
@@ -233,11 +256,40 @@
       },
       "backup_settings": {
         "name": "Einstellungen sichern"
+      },
+      "grant_permissions": {
+        "name": "Berechtigungen erteilen"
       }
     },
     "event": {
       "button": {
         "name": "Taste {index}",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "single": "Einfacher Druck",
+              "double": "Doppelter Druck",
+              "triple": "Dreifacher Druck",
+              "long": "Langer Druck"
+            }
+          }
+        }
+      },
+      "input": {
+        "name": "Eingang {index} Tastendruck",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "single": "Einfacher Druck",
+              "double": "Doppelter Druck",
+              "triple": "Dreifacher Druck",
+              "long": "Langer Druck"
+            }
+          }
+        }
+      },
+      "input_single": {
+        "name": "Eingang Tastendruck",
         "state_attributes": {
           "event_type": {
             "state": {
@@ -322,7 +374,7 @@
       "screensaver_type": {
         "name": "Bildschirmschoner",
         "state": {
-          "off": "Aus",
+          "off": "Bildschirm aus",
           "clock": "Uhr",
           "clock_date": "Uhr und Datum",
           "always_on": "Always-on-Display"
@@ -458,6 +510,9 @@
     "incompatible_api": {
       "message": "Inkompatible ShellyElevate-API: {error}"
     },
+    "device_id_mismatch": {
+      "message": "Das Display unter {host} meldet die ID {actual}, dieser Eintrag gehört aber zum Display {expected}. Füge es als neues Display hinzu oder konfiguriere diesen Eintrag mit der richtigen Adresse neu."
+    },
     "cannot_connect": {
       "message": "Verbindung zum Display unter {host} fehlgeschlagen."
     },
@@ -508,6 +563,12 @@
     },
     "no_install_method": {
       "message": "Dieses Display kann nur mit aktiviertem ADB aktualisiert werden."
+    },
+    "app_update_failed": {
+      "message": "Die App konnte sich nicht selbst aktualisieren: {reason}"
+    },
+    "permissions_still_missing": {
+      "message": "Nach dem Erteilen über ADB fehlt weiterhin: {missing}"
     },
     "screenshot_unsupported": {
       "message": "Screenshots erfordern eine neuere App-Version oder ADB."

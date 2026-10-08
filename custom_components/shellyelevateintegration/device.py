@@ -21,6 +21,7 @@ from .const import DOMAIN, EVENT_SHELLY_ELEVATE, MANUFACTURER
 if TYPE_CHECKING:
     from .adb.manager import AdbManager
     from .image import ShellyElevateIntegrationScreenshot
+    from .permissions import PermissionGuard
     from .settings.backups import BackupManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ class ShellyElevateIntegrationDevice:
         self._unsubs: list[Callable[[], None]] = []
         self.backups: BackupManager | None = None
         self.adb: AdbManager | None = None
+        self.permissions: PermissionGuard | None = None
         self.screenshot_entity: ShellyElevateIntegrationScreenshot | None = None
         self.voice_enabled = False
         self.device_entry_id: str | None = None
@@ -64,8 +66,8 @@ class ShellyElevateIntegrationDevice:
 
     @property
     def device_id(self) -> str:
-        """Stable device id."""
-        return self.info.device_id
+        """Stable device id: the id the entry was paired with."""
+        return self.entry.unique_id or self.info.device_id
 
     @property
     def available(self) -> bool:
@@ -92,7 +94,7 @@ class ShellyElevateIntegrationDevice:
         """Device registry info."""
         info = self.info
         device = HADeviceInfo(
-            identifiers={(DOMAIN, info.device_id)},
+            identifiers={(DOMAIN, self.device_id)},
             manufacturer=MANUFACTURER,
             model=info.model_name,
             model_id=info.model,
@@ -177,6 +179,16 @@ class ShellyElevateIntegrationDevice:
     def _on_connection(self, connected: bool) -> None:
         if connected:
             self._schema = None  # the app may have been updated while it was away
+            if not self.legacy and self.entry.unique_id and self.info.device_id != self.entry.unique_id:
+                # another display took over the address: setup then fails with a clear error
+                _LOGGER.error(
+                    "%s now reports the id %s instead of %s",
+                    self.entry.title,
+                    self.info.device_id,
+                    self.entry.unique_id,
+                )
+                self.hass.config_entries.async_schedule_reload(self.entry.entry_id)
+                return
             _LOGGER.info("%s is available again", self.entry.title)
             self._async_refresh_device_registry()
         else:
@@ -205,6 +217,13 @@ class ShellyElevateIntegrationDevice:
             except ShellyElevateIntegrationError as err:
                 _LOGGER.debug("Could not fetch the settings schema of %s: %s", self.entry.title, err)
         return self._schema
+
+    async def async_known_keys(self) -> set[str]:
+        """Setting keys the display accepts: the cached settings narrowed to its schema on v1."""
+        keys = set(self.settings)
+        if not self.legacy and (schema := await self.async_get_schema()):
+            keys &= {item.key for item in schema}
+        return keys
 
     async def async_command(self, action: str, /, **params: Any) -> dict[str, Any]:
         """Run a command and translate API errors."""

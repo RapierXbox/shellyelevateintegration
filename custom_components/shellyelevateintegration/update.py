@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import timedelta
 import logging
@@ -13,7 +14,7 @@ from homeassistant.components.update import (
     UpdateEntityDescription,
     UpdateEntityFeature,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -27,6 +28,8 @@ _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 1
 SCAN_INTERVAL = timedelta(hours=6)
+SELF_UPDATE_TIMEOUT = 600
+"""Seconds to wait for the app to restart or report a failed self update."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -55,6 +58,7 @@ class ShellyElevateIntegrationAppUpdate(ShellyElevateIntegrationEntity, UpdateEn
             ShellyElevateIntegrationUpdateDescription(key="app_update", translation_key="app_update", state_keys=()),
         )
         self._release: AppRelease | None = None
+        self._self_update: asyncio.Future[str | None] | None = None
 
     @property
     def available(self) -> bool:
@@ -97,7 +101,30 @@ class ShellyElevateIntegrationAppUpdate(ShellyElevateIntegrationEntity, UpdateEn
     async def async_added_to_hass(self) -> None:
         """Fetch the latest release once on startup."""
         await super().async_added_to_hass()
+        self.async_on_remove(self.device.async_add_message_listener(self._on_message))
+        self.async_on_remove(self.device.async_add_availability_listener(self._on_availability))
         self.hass.async_create_task(self.async_update_ha_state(force_refresh=True), eager_start=False)
+
+    @callback
+    def _on_message(self, message: dict[str, Any]) -> None:
+        if message.get("type") == "event" and message.get("event") == "app_update":
+            if message.get("status") == "failed":
+                reason = str(message.get("reason") or "unknown")
+                _LOGGER.warning("Updating the app on %s failed: %s", self.device.entry.title, reason)
+                self._finish_self_update(reason)
+        elif message.get("type") == "_info_changed":
+            self._finish_self_update(None)
+
+    @callback
+    def _on_availability(self) -> None:
+        if not self.device.available:
+            # the app restarts to finish the update
+            self._finish_self_update(None)
+
+    @callback
+    def _finish_self_update(self, error: str | None) -> None:
+        if self._self_update is not None and not self._self_update.done():
+            self._self_update.set_result(error)
 
     async def async_update(self) -> None:
         """Poll GitHub."""
@@ -128,13 +155,36 @@ class ShellyElevateIntegrationAppUpdate(ShellyElevateIntegrationEntity, UpdateEn
         self.async_write_ha_state()
         try:
             if self.device.info.capabilities.self_update and self.device.available:
-                await self.device.async_command(
-                    "app.update", url=release.apk_url, sha256=release.sha256, version=release.version
-                )
+                await self._async_self_update(release)
             elif self.device.adb is not None:
                 await self.device.adb.async_install_app(release, post_install=False)
             else:
                 raise HomeAssistantError(translation_domain=DOMAIN, translation_key="no_install_method")
+            if self.device.permissions is not None:
+                # a new version may need a permission the old one did not
+                self.device.permissions.async_after_update()
         finally:
             self._attr_in_progress = False
             self.async_write_ha_state()
+
+    async def _async_self_update(self, release: AppRelease) -> None:
+        """Let the app update itself and wait until it restarts or reports a failure."""
+        params: dict[str, Any] = {"url": release.apk_url, "version": release.version}
+        if release.sha256 is not None:
+            params["sha256"] = release.sha256
+        self._self_update = done = self.hass.loop.create_future()
+        try:
+            await self.device.async_command("app.update", **params)
+            async with asyncio.timeout(SELF_UPDATE_TIMEOUT):
+                error = await done
+        except TimeoutError:
+            _LOGGER.debug("%s did not restart after the update command", self.device.entry.title)
+            return
+        finally:
+            self._self_update = None
+        if error is not None:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="app_update_failed",
+                translation_placeholders={"reason": error},
+            )

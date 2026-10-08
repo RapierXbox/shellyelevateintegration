@@ -118,7 +118,7 @@ async def async_profile_diff(
     """What applying a profile would change on a display."""
     manager = await async_get_profile_manager(hass)
     await device.async_refresh_settings()
-    target = manager.settings_for_device(profile_id, await device.async_get_schema(), set(device.settings))
+    target = manager.settings_for_device(profile_id, await device.async_get_schema(), await device.async_known_keys())
     return schema_util.diff(device.settings, target)
 
 
@@ -139,7 +139,8 @@ async def async_copy_settings(
         try:
             await target.async_refresh_settings()
             portable = schema_util.portable(settings, await target.async_get_schema())
-            changes = schema_util.diff(target.settings, {k: v for k, v in portable.items() if k in target.settings})
+            known = await target.async_known_keys()
+            changes = schema_util.diff(target.settings, {k: v for k, v in portable.items() if k in known})
             if changes:
                 _backups(target).snapshot(REASON_BEFORE_PROFILE)
                 await target.async_set_settings({item["key"]: item["new"] for item in changes})
@@ -277,6 +278,8 @@ def async_setup_services(hass: HomeAssistant) -> None:
         installed = await device.adb.async_install_app(
             release, device.entry.options.get(OPT_UPDATE_CHANNEL, UPDATE_CHANNEL_STABLE), post_install=False
         )
+        if device.permissions is not None:
+            device.permissions.async_after_update()
         return {"version": installed.version}
 
     async def revert_display(call: ServiceCall) -> ServiceResponse:

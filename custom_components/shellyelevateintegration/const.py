@@ -19,6 +19,8 @@ CONF_PANEL: Final = "panel"
 """Marks the entry that only provides the sidebar panel (no display yet)."""
 PANEL_UNIQUE_ID: Final = "_panel"
 """SHA-256 of the display's TLS certificate, pinned at pairing (lowercase hex)."""
+CONF_FEATURES_AUTO_ENABLED: Final = "features_auto_enabled"
+"""Media, the Bluetooth proxy and voice were turned on once; later user choices stand."""
 
 # Options
 OPT_RELAYS_AS_LIGHTS: Final = "relays_as_lights"

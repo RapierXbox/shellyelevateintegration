@@ -72,7 +72,9 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
 
     def __init__(self, device: ShellyElevateIntegrationDevice) -> None:
         """Initialize."""
-        super().__init__(device, ShellyElevateIntegrationSatelliteDescription(key="assist_satellite", state_keys=()))
+        super().__init__(
+            device, ShellyElevateIntegrationSatelliteDescription(key="assist_satellite", state_keys=("voice.state",))
+        )
         self._audio_queue: asyncio.Queue[bytes | None] | None = None
         self._tts_done: asyncio.Event | None = None
         self._config = assist_satellite.AssistSatelliteConfiguration(
@@ -92,10 +94,20 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
         """VAD select of this display."""
         return vad_select_entity_id(self.hass, self.device)
 
+    @property
+    def available(self) -> bool:
+        """Unavailable while voice is switched off on the display."""
+        if not super().available:
+            return False
+        if self.device.settings.get("haVoiceEnabled") is False:
+            return False
+        return self.device.state.get("voice.state") != "disabled"
+
     async def async_added_to_hass(self) -> None:
         """Subscribe to voice messages, audio and timers."""
         await super().async_added_to_hass()
         self.async_on_remove(self.device.async_add_message_listener(self._on_message))
+        self.async_on_remove(self.device.async_add_availability_listener(self._on_availability))
         # the display sent its wake words when it connected, before this entity listened
         if (cached := self.device.client.voice_config) is not None:
             self._apply_config(cached)
@@ -136,6 +148,22 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
             self.tts_response_finished()
         elif msg_type == "voice.config":
             self._apply_config(message)
+        elif msg_type == "settings_changed" and "haVoiceEnabled" in (message.get("changes") or {}):
+            if not self.available:
+                self._end_audio()
+            self.async_write_ha_state()
+
+    @callback
+    def _handle_state(self, changes: dict[str, Any]) -> None:
+        if "voice.state" in changes and not self.available:
+            self._end_audio()
+        super()._handle_state(changes)
+
+    @callback
+    def _on_availability(self) -> None:
+        if not self.device.available:
+            # a pipeline waiting for audio would otherwise hang until it times out
+            self._end_audio()
 
     @callback
     def _apply_config(self, message: dict[str, Any]) -> None:
@@ -170,13 +198,19 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
             while (chunk := await queue.get()) is not None:
                 yield chunk
 
-        self.device.entry.async_create_background_task(
-            self.hass,
-            self.async_accept_pipeline_from_satellite(
-                _stream(), start_stage=PipelineStage.STT, wake_word_phrase=wake_word_phrase
-            ),
-            f"{DOMAIN} pipeline {self.device.device_id}",
-        )
+        async def _run() -> None:
+            try:
+                await self.async_accept_pipeline_from_satellite(
+                    _stream(), start_stage=PipelineStage.STT, wake_word_phrase=wake_word_phrase
+                )
+            except Exception as err:
+                _LOGGER.warning("Voice pipeline of %s failed: %s", self.device.entry.title, err)
+                if self._audio_queue is queue:
+                    self._end_audio()
+                self._send("voice.stop_audio")
+                self._send("voice.state", state="error", message=str(err))
+
+        self.device.entry.async_create_background_task(self.hass, _run(), f"{DOMAIN} pipeline {self.device.device_id}")
 
     @callback
     def _end_audio(self) -> None:
@@ -238,7 +272,11 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
         """Announce, then listen without wake word."""
         await self._async_play_and_wait(start_announcement)
         self._start_pipeline()
-        await self.device.async_command("voice.start", start_conversation=True)
+        try:
+            await self.device.async_command("voice.start", start_conversation=True)
+        except HomeAssistantError:
+            self._end_audio()
+            raise
 
     async def _async_play_and_wait(self, announcement: assist_satellite.AssistSatelliteAnnouncement) -> None:
         params: dict[str, Any] = {"url": async_process_play_media_url(self.hass, announcement.media_id)}
