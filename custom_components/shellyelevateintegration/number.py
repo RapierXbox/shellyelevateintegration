@@ -79,19 +79,22 @@ NUMBERS: tuple[ShellyElevateIntegrationNumberDescription, ...] = (
 )
 
 
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[NumberEntity]:
+    """Numbers the display should have now (ranges from the schema fetched at setup)."""
+    schema = {item.key: item for item in device.schema or []}
+    return build_entities(
+        device,
+        NUMBERS,
+        lambda dev, desc: ShellyElevateIntegrationSettingNumber(dev, desc, schema.get(desc.setting_key or "")),
+    )
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up numbers."""
-    device = entry.runtime_data
-    schema = {item.key: item for item in await device.async_get_schema() or []}
-    async_add_entities(
-        build_entities(
-            device,
-            NUMBERS,
-            lambda dev, desc: ShellyElevateIntegrationSettingNumber(dev, desc, schema.get(desc.setting_key or "")),
-        )
-    )
+    await entry.runtime_data.async_get_schema()
+    async_add_entities(create_entities(entry.runtime_data))
 
 
 class ShellyElevateIntegrationSettingNumber(ShellyElevateIntegrationEntity, NumberEntity):

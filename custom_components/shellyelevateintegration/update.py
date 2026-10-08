@@ -30,6 +30,8 @@ PARALLEL_UPDATES = 1
 SCAN_INTERVAL = timedelta(hours=6)
 SELF_UPDATE_TIMEOUT = 600
 """Seconds to wait for the app to restart or report a failed self update."""
+RESTART_TIMEOUT = 180
+"""Seconds to wait for the app to be back after it went away for the update."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -41,7 +43,12 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up the update entity."""
-    async_add_entities([ShellyElevateIntegrationAppUpdate(entry.runtime_data)], update_before_add=False)
+    async_add_entities(create_entities(entry.runtime_data), update_before_add=False)
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[UpdateEntity]:
+    """The app update entity (always)."""
+    return [ShellyElevateIntegrationAppUpdate(device)]
 
 
 class ShellyElevateIntegrationAppUpdate(ShellyElevateIntegrationEntity, UpdateEntity):
@@ -59,6 +66,7 @@ class ShellyElevateIntegrationAppUpdate(ShellyElevateIntegrationEntity, UpdateEn
         )
         self._release: AppRelease | None = None
         self._self_update: asyncio.Future[str | None] | None = None
+        self._info_or_connection = asyncio.Event()
 
     @property
     def available(self) -> bool:
@@ -113,10 +121,12 @@ class ShellyElevateIntegrationAppUpdate(ShellyElevateIntegrationEntity, UpdateEn
                 _LOGGER.warning("Updating the app on %s failed: %s", self.device.entry.title, reason)
                 self._finish_self_update(reason)
         elif message.get("type") == "_info_changed":
+            self._info_or_connection.set()
             self._finish_self_update(None)
 
     @callback
     def _on_availability(self) -> None:
+        self._info_or_connection.set()
         if not self.device.available:
             # the app restarts to finish the update
             self._finish_self_update(None)
@@ -168,7 +178,7 @@ class ShellyElevateIntegrationAppUpdate(ShellyElevateIntegrationEntity, UpdateEn
             self.async_write_ha_state()
 
     async def _async_self_update(self, release: AppRelease) -> None:
-        """Let the app update itself and wait until it restarts or reports a failure."""
+        """Let the app update itself and wait until it runs the new version or reports a failure."""
         params: dict[str, Any] = {"url": release.apk_url, "version": release.version}
         if release.sha256 is not None:
             params["sha256"] = release.sha256
@@ -177,14 +187,33 @@ class ShellyElevateIntegrationAppUpdate(ShellyElevateIntegrationEntity, UpdateEn
             await self.device.async_command("app.update", **params)
             async with asyncio.timeout(SELF_UPDATE_TIMEOUT):
                 error = await done
-        except TimeoutError:
-            _LOGGER.debug("%s did not restart after the update command", self.device.entry.title)
-            return
+        except TimeoutError as err:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="app_update_timeout") from err
         finally:
             self._self_update = None
         if error is not None:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key="app_update_failed",
-                translation_placeholders={"reason": error},
-            )
+            raise _update_failed(error)
+        # a lost connection alone is no success: the app must come back with the new version
+        if not await self._async_wait_until_back():
+            raise _update_failed(f"the app did not come back within {RESTART_TIMEOUT} seconds")
+        if version_key(self.device.info.fw_version) != version_key(release.version):
+            raise _update_failed(f"the display still runs {self.device.info.fw_version}")
+
+    async def _async_wait_until_back(self) -> bool:
+        """Wait (bounded) until the display is connected again; False on timeout."""
+        try:
+            async with asyncio.timeout(RESTART_TIMEOUT):
+                while not self.device.available:
+                    self._info_or_connection.clear()
+                    await self._info_or_connection.wait()
+        except TimeoutError:
+            return False
+        return True
+
+
+def _update_failed(reason: str) -> HomeAssistantError:
+    return HomeAssistantError(
+        translation_domain=DOMAIN,
+        translation_key="app_update_failed",
+        translation_placeholders={"reason": reason},
+    )

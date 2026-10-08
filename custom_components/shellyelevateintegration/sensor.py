@@ -75,7 +75,7 @@ SENSORS: tuple[ShellyElevateIntegrationSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         state_keys=("proximity",),
         entity_registry_enabled_default=False,
-        supported_fn=lambda d: d.info.capabilities.proximity and "proximity" in d.state,
+        supported_fn=has_cap("proximity"),
     ),
     ShellyElevateIntegrationSensorDescription(
         key="screen_brightness",
@@ -137,20 +137,24 @@ SENSORS: tuple[ShellyElevateIntegrationSensorDescription, ...] = (
         options=["idle", "listening", "processing", "responding", "error", "disabled"],
         entity_category=EntityCategory.DIAGNOSTIC,
         state_keys=("voice.state",),
-        supported_fn=has_state("voice.state"),
+        supported_fn=lambda d: d.voice_active,
     ),
 )
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[SensorEntity]:
+    """Sensors the display should have now."""
+    entities: list[SensorEntity] = build_entities(device, SENSORS, ShellyElevateIntegrationSensor)
+    if has_state("uptime")(device):
+        entities.append(ShellyElevateIntegrationUptimeSensor(device))
+    return entities
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up sensors."""
-    device = entry.runtime_data
-    entities: list[SensorEntity] = build_entities(device, SENSORS, ShellyElevateIntegrationSensor)
-    if "uptime" in device.state:
-        entities.append(ShellyElevateIntegrationUptimeSensor(device))
-    async_add_entities(entities)
+    async_add_entities(create_entities(entry.runtime_data))
 
 
 class ShellyElevateIntegrationSensor(ShellyElevateIntegrationEntity, SensorEntity):

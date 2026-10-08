@@ -26,7 +26,16 @@ from .errors import (
     ShellyElevateIntegrationError,
     ShellyElevateIntegrationUnsupportedError,
 )
-from .models import DEFAULT_NAME, LEGACY_PORT, MODELS, POWER_BASE_MODELS, Capabilities, DeviceInfo, SettingDef
+from .models import (
+    DEFAULT_NAME,
+    LEGACY_PORT,
+    MODELS,
+    POWER_BASE_MODELS,
+    Capabilities,
+    DeviceInfo,
+    SettingDef,
+    SettingsWrite,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -256,15 +265,16 @@ class LegacyClient(ShellyElevateIntegrationApi):
             self._emit({"type": "settings_changed", "changes": changed})
         return self.settings
 
-    async def set_settings(self, changes: dict[str, Any]) -> dict[str, Any]:
-        """Apply partial settings."""
+    async def set_settings(self, changes: dict[str, Any]) -> SettingsWrite:
+        """Apply partial settings (and report them: the legacy app sends no settings_changed)."""
         data = await self._call("POST", "/settings", changes)
         if "settings" in data:
             self.settings = dict(data["settings"])
         else:
             self.settings.update(changes)
-        self._emit({"type": "settings_changed", "changes": changes})
-        return self.settings
+        applied = {key: self.settings.get(key, value) for key, value in changes.items()}
+        self._emit({"type": "settings_changed", "changes": applied})
+        return SettingsWrite(self.settings, applied)
 
     async def get_settings_schema(self) -> list[SettingDef]:
         """The legacy app has no schema endpoint; use the built-in one."""

@@ -22,33 +22,50 @@ export interface Visibility {
 
 const SHOWN: Visibility = { visible: true, hidden: false, unreachable: false, missing: [], failed: [] };
 
-const sameValue = (a: unknown, b: unknown): boolean =>
-  JSON.stringify(a) === JSON.stringify(b) || (a != null && b != null && String(a) === String(b));
+/**
+ * Equal like the app compares values: 1 equals 1.0 but true is not 1 and "1" is not 1. `loose` also
+ * matches the string form ("true" equals true) for legacy displays, which may report strings.
+ */
+const sameValue = (a: unknown, b: unknown, loose = false): boolean =>
+  JSON.stringify(a) === JSON.stringify(b) || (loose && a != null && b != null && String(a) === String(b));
 
-export const conditionHolds = (cond: VisibleIf, value: unknown): boolean => {
-  if ("eq" in cond) return sameValue(value, cond.eq);
-  if ("ne" in cond) return !sameValue(value, cond.ne);
-  if (Array.isArray(cond.in)) return cond.in.some((v) => sameValue(value, v));
-  return true;
+/** Whether one `visible_if` condition holds; an unknown operator fails like in the app. */
+export const conditionHolds = (cond: VisibleIf, value: unknown, loose = false): boolean => {
+  if ("eq" in cond) return sameValue(value, cond.eq, loose);
+  if ("ne" in cond) return !sameValue(value, cond.ne, loose);
+  if (Array.isArray(cond.in)) return cond.in.some((v) => sameValue(value, v, loose));
+  return false;
 };
 
 const requirementMet = (req: Requirement, caps: Capabilities, known: Set<string>): boolean => {
   // legacy displays and older apps do not report every capability
   if (!known.has(req.cap)) return true;
-  const have = caps[req.cap];
-  if (req.min !== undefined && req.min !== null) return Number(have ?? 0) >= req.min;
-  return !!have;
+  const have: unknown = caps[req.cap];
+  if (req.min !== undefined && req.min !== null) return typeof have === "number" && have >= req.min;
+  if (typeof have === "boolean") return have;
+  if (typeof have === "number") return have !== 0;
+  if (typeof have === "string") return have !== "";
+  return have != null;
 };
 
-/** What a condition compares against: a value, or the reasons its setting is not shown. */
-type RefState = { value: unknown; missing?: Requirement[] } | { blocked: Visibility };
+/** Stand-in value of an unavailable setting: false for a bool and its default otherwise. */
+const fallbackValue = (def: SettingDef): unknown => (def.type === "bool" ? false : def.default);
 
-/** Evaluates visibility against the current (edited) values; build a new one when values change. */
+/** State of protocol v1 section 4 (ignores `hidden`) with the reasons for the hint. */
+type State = Omit<Visibility, "visible" | "hidden"> & { state: "visible" | "unavailable" | "inactive" };
+
+const VISIBLE_STATE: State = { state: "visible", unreachable: false, missing: [], failed: [] };
+
+/**
+ * Evaluates visibility against the current (edited) values like the app (SettingVisibility.java) and
+ * the integration (api/visibility.py); build a new one when values change.
+ */
 export class VisibilityEvaluator {
   private readonly _defs = new Map<string, SettingDef>();
   private readonly _caps: Capabilities;
   private readonly _known: Set<string>;
-  private readonly _cache = new Map<string, Visibility>();
+  private readonly _loose: boolean;
+  private readonly _cache = new Map<string, State>();
 
   constructor(
     data: SettingsGetResult,
@@ -57,6 +74,7 @@ export class VisibilityEvaluator {
     for (const def of data.schema) this._defs.set(def.key, def);
     this._caps = data.capabilities ?? {};
     this._known = new Set(data.known_caps ?? Object.keys(this._caps));
+    this._loose = data.legacy ?? false;
   }
 
   def(key: string): SettingDef | undefined {
@@ -64,73 +82,71 @@ export class VisibilityEvaluator {
   }
 
   get(key: string): Visibility {
-    return this._eval(key, new Set());
+    const def = this._defs.get(key);
+    if (!def) return SHOWN;
+    if (def.hidden) return { ...SHOWN, visible: false, hidden: true };
+    const { state, ...reasons } = this._state(def, new Set());
+    return { ...reasons, visible: state === "visible", hidden: false };
   }
 
   visible(key: string): boolean {
     return this.get(key).visible;
   }
 
-  private _eval(key: string, stack: Set<string>): Visibility {
-    const cached = this._cache.get(key);
+  /**
+   * unavailable: a `requires` entry fails (checked first). inactive: a `visible_if` condition fails,
+   * refers to an unknown or inactive setting or is part of a cycle. An unavailable parent counts as its
+   * stand-in value. `hidden` only hides the setting itself.
+   */
+  private _state(def: SettingDef, visiting: Set<string>): State {
+    const cached = this._cache.get(def.key);
     if (cached) return cached;
-    const def = this._defs.get(key);
-    if (!def) return SHOWN;
-    if (def.hidden) return this._store(key, { ...SHOWN, visible: false, hidden: true });
     const missing = (def.requires ?? []).filter((req) => !requirementMet(req, this._caps, this._known));
+    if (missing.length) return this._store(def.key, { state: "unavailable", unreachable: false, missing, failed: [] });
+    const conditions = def.visible_if ?? [];
+    if (!conditions.length) return this._store(def.key, VISIBLE_STATE);
+    // a cycle never resolves so every setting on it stays hidden
+    if (visiting.has(def.key)) return { state: "inactive", unreachable: true, missing: [], failed: [] };
+    visiting.add(def.key);
     const failed: FailedCondition[] = [];
     let unreachable = false;
-    stack.add(key);
-    for (const cond of def.visible_if ?? []) {
-      const ref = this._refState(cond.key, stack);
-      if ("blocked" in ref) {
-        // the parent is not shown itself so report why and then this condition
-        missing.push(...ref.blocked.missing);
-        failed.push(...ref.blocked.failed);
-        unreachable ||= ref.blocked.hidden || ref.blocked.unreachable;
-        if (!conditionHolds(cond, this._current(cond.key))) failed.push({ cond, parent: this._defs.get(cond.key) });
-      } else if (!conditionHolds(cond, ref.value)) {
-        // a parent the display cannot use cannot be switched to make this hold
-        if (ref.missing?.length) missing.push(...ref.missing);
-        else failed.push({ cond, parent: this._defs.get(cond.key) });
+    try {
+      for (const cond of conditions) {
+        const parent = this._defs.get(cond.key);
+        if (!parent) {
+          unreachable = true;
+          continue;
+        }
+        const ref = this._state(parent, visiting);
+        if (ref.state === "inactive") {
+          // shown once the parent is shown and this condition holds
+          missing.push(...ref.missing);
+          failed.push(...ref.failed);
+          unreachable ||= ref.unreachable;
+          if (!conditionHolds(cond, this._current(parent), this._loose)) failed.push({ cond, parent });
+        } else if (ref.state === "unavailable") {
+          // a parent the display lacks cannot be switched to make this hold
+          if (!conditionHolds(cond, fallbackValue(parent), this._loose)) missing.push(...ref.missing);
+        } else if (!conditionHolds(cond, this._current(parent), this._loose)) {
+          failed.push({ cond, parent });
+        }
       }
+    } finally {
+      visiting.delete(def.key);
     }
-    stack.delete(key);
-    if (!missing.length && !failed.length && !unreachable) return this._store(key, SHOWN);
-    return this._store(key, {
-      visible: false,
-      hidden: false,
-      unreachable,
-      missing: dedupe(missing),
-      failed: dedupe(failed),
-    });
+    if (!missing.length && !failed.length && !unreachable) return this._store(def.key, VISIBLE_STATE);
+    return this._store(def.key, { state: "inactive", unreachable, missing: dedupe(missing), failed: dedupe(failed) });
   }
 
-  /**
-   * The value a condition on `key` is checked against.
-   * A parent that is only missing a capability counts as off (bool) or its default value like the app.
-   * `hidden` only hides the parent itself; a parent hidden by its own conditions hides the child too.
-   * Cycles fall back to the current value.
-   */
-  private _refState(key: string, stack: Set<string>): RefState {
-    const parent = this._defs.get(key);
-    if (!parent || stack.has(key) || parent.hidden) return { value: this._current(key) };
-    const vis = this._eval(key, stack);
-    if (vis.visible) return { value: this._current(key) };
-    if (!vis.unreachable && !vis.failed.length) {
-      return { value: parent.type === "bool" ? false : parent.default, missing: vis.missing };
-    }
-    return { blocked: vis };
+  /** Current value of a setting, its default when unset. */
+  private _current(def: SettingDef): unknown {
+    const value = this._value(def.key);
+    return value === undefined || value === null ? def.default : value;
   }
 
-  private _current(key: string): unknown {
-    const value = this._value(key);
-    return value === undefined ? this._defs.get(key)?.default : value;
-  }
-
-  private _store(key: string, vis: Visibility): Visibility {
-    this._cache.set(key, vis);
-    return vis;
+  private _store(key: string, state: State): State {
+    this._cache.set(key, state);
+    return state;
   }
 }
 
@@ -145,7 +161,7 @@ const dedupe = <T>(items: T[]): T[] => {
 };
 
 const optionLabel = (parent: SettingDef | undefined, value: unknown): string =>
-  parent?.options?.find((o) => sameValue(o.value, value))?.label ?? formatValue(value);
+  parent?.options?.find((o) => sameValue(o.value, value, true))?.label ?? formatValue(value);
 
 const describe = ({ cond, parent }: FailedCondition): string => {
   const label = parent?.label || cond.key;

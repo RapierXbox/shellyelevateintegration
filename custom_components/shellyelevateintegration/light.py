@@ -39,16 +39,19 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up lights."""
-    device = entry.runtime_data
+    async_add_entities(create_entities(entry.runtime_data))
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[LightEntity]:
+    """Lights the display should have now."""
     caps = device.info.capabilities
-    entities: list[LightEntity] = []
-    if "screen.brightness" in device.state or "screen.on" in device.state:
-        entities.append(ShellyElevateIntegrationScreenLight(device))
+    # every display reports screen.on (the legacy client optimistically)
+    entities: list[LightEntity] = [ShellyElevateIntegrationScreenLight(device)]
     if caps.dimmer:
         entities.append(ShellyElevateIntegrationDimmerLight(device))
-    if entry.options.get(OPT_RELAYS_AS_LIGHTS, False):
+    if device.entry.options.get(OPT_RELAYS_AS_LIGHTS, False):
         entities += [ShellyElevateIntegrationRelayLight(device, idx, caps.relays) for idx in range(caps.relays)]
-    async_add_entities(entities)
+    return entities
 
 
 class ShellyElevateIntegrationScreenLight(ShellyElevateIntegrationEntity, LightEntity):

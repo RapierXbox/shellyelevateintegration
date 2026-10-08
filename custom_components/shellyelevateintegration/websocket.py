@@ -10,12 +10,13 @@ from homeassistant.components import websocket_api
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 import voluptuous as vol
 
 from .adb.apk import async_get_releases
 from .api import ShellyElevateIntegrationError
-from .api.legacy_schema import LEGACY_CAPS
-from .const import DOMAIN, is_panel_entry
+from .api.app_schema import app_schema
+from .const import DOMAIN, SIGNAL_SETTINGS_CHANGED, is_panel_entry
 from .device import ShellyElevateIntegrationDevice
 from .installer import ProvisionOptions, async_provision, default_dashboard_url
 from .revert import RevertOptions, async_revert, async_revert_check
@@ -145,23 +146,27 @@ async def ws_settings_get(
     device = _device(hass, msg["entry_id"])
     await device.async_refresh_settings()
     schema = await device.async_get_schema()
-    known = {item.key for item in schema or ()}
+    rules = schema
+    if not schema and not device.legacy:
+        # without the schema of the display the rules of the app (like device.visibility)
+        rules = app_schema(set(device.settings), undescribed=False)
+    known = {item.key for item in rules or ()}
     # undescribed keys stay editable as raw values in a collapsed section of the panel
     extra = [
         {"key": k, "type": _guess_type(v), "category": "other", "label": k}
         for k, v in device.settings.items()
         if k not in known and k not in REMOVED_KEYS
     ]
-    capabilities = device.info.capabilities.as_dict()
-    capabilities.pop("optional_relays_from", None)
     return {
         "settings": device.settings,
-        "schema": [item.as_dict() for item in schema or ()] + extra,
+        "schema": [item.as_dict() for item in rules or ()] + extra,
         "per_device": sorted(schema_util.per_device_keys(schema)),
         "secret": sorted(schema_util.secret_keys(schema)),
-        "capabilities": capabilities,
+        "capabilities": device.capabilities,
         # requires on a capability outside this list counts as met
-        "known_caps": sorted(LEGACY_CAPS if device.legacy else capabilities),
+        "known_caps": sorted(device.known_caps),
+        # legacy displays may report values as strings so the panel compares loosely
+        "legacy": device.legacy,
         "managed": _managed_settings(device, known | set(device.settings)),
     }
 
@@ -170,9 +175,35 @@ async def ws_settings_get(
 async def ws_settings_set(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> dict[str, Any]:
-    """Write settings."""
+    """Write settings; `ignored` lists the keys the display does not know (not written)."""
     device = _device(hass, msg["entry_id"])
-    return {"settings": await device.async_set_settings(msg["changes"])}
+    result = await device.async_set_settings(msg["changes"])
+    return {"settings": result.settings, "ignored": result.ignored}
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/settings/subscribe", vol.Required("entry_id"): str})
+@websocket_api.require_admin
+@callback
+def ws_settings_subscribe(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Forward the setting changes of one display (from Home Assistant or the display itself).
+
+    Keeps working while the entry reloads (the panel reads all settings again after a reconnect).
+    """
+    msg_id = msg["id"]
+    entry = hass.config_entries.async_get_entry(msg["entry_id"])
+    if entry is None or entry.domain != DOMAIN or is_panel_entry(entry):
+        connection.send_error(msg_id, "not_found", f"Display {msg['entry_id']} not found")
+        return
+
+    @callback
+    def forward(changes: dict[str, Any]) -> None:
+        if changes:
+            connection.send_message(websocket_api.event_message(msg_id, {"changes": changes}))
+
+    connection.subscriptions[msg_id] = async_dispatcher_connect(
+        hass, SIGNAL_SETTINGS_CHANGED.format(entry.entry_id), forward
+    )
+    connection.send_result(msg_id)
 
 
 @_cmd(
@@ -536,6 +567,7 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
         ws_devices,
         ws_settings_get,
         ws_settings_set,
+        ws_settings_subscribe,
         ws_export,
         ws_copy,
         ws_command,

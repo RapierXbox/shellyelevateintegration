@@ -18,7 +18,6 @@ from .entity import (
     ShellyElevateIntegrationEntity,
     ShellyElevateIntegrationEntityDescription,
     build_entities,
-    has_state,
     indexed_name,
 )
 
@@ -37,7 +36,7 @@ BINARY_SENSORS: tuple[ShellyElevateIntegrationBinarySensorDescription, ...] = (
         key="presence",
         device_class=BinarySensorDeviceClass.OCCUPANCY,
         state_keys=("presence",),
-        supported_fn=lambda d: d.info.capabilities.proximity and "presence" in d.state,
+        supported_fn=lambda d: d.info.capabilities.proximity,
     ),
     ShellyElevateIntegrationBinarySensorDescription(
         key="screen_on",
@@ -45,7 +44,7 @@ BINARY_SENSORS: tuple[ShellyElevateIntegrationBinarySensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         state_keys=("screen.on",),
-        supported_fn=lambda d: not d.legacy and "screen.on" in d.state,
+        supported_fn=lambda d: not d.legacy,
     ),
     ShellyElevateIntegrationBinarySensorDescription(
         key="voice_muted",
@@ -53,7 +52,7 @@ BINARY_SENSORS: tuple[ShellyElevateIntegrationBinarySensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         state_keys=("voice.muted",),
-        supported_fn=has_state("voice.muted"),
+        supported_fn=lambda d: d.voice_active,
     ),
 )
 
@@ -62,7 +61,11 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up binary sensors."""
-    device = entry.runtime_data
+    async_add_entities(create_entities(entry.runtime_data))
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[BinarySensorEntity]:
+    """Binary sensors the display should have now."""
     inputs = device.info.capabilities.inputs
     input_descriptions = [
         ShellyElevateIntegrationBinarySensorDescription(
@@ -73,9 +76,7 @@ async def async_setup_entry(
         )
         for idx in range(inputs)
     ]
-    async_add_entities(
-        build_entities(device, (*BINARY_SENSORS, *input_descriptions), ShellyElevateIntegrationBinarySensor)
-    )
+    return build_entities(device, (*BINARY_SENSORS, *input_descriptions), ShellyElevateIntegrationBinarySensor)
 
 
 class ShellyElevateIntegrationBinarySensor(ShellyElevateIntegrationEntity, BinarySensorEntity):

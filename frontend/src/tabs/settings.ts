@@ -14,6 +14,7 @@ import {
 import {
   type HaFormSchema,
   type SelectedEvent,
+  type UnsubscribeFunc,
   type ValueChangedEvent,
   fireEvent,
   inputValue,
@@ -154,6 +155,9 @@ export class SeSettingsTab extends LitElement {
   private _reportedUnsaved = "";
   /** Dialog whose content stays rendered until its closing animation is done. */
   private _openDialogName: Dialog = "";
+  /** Live setting changes of the display in `_subscribedFor`. */
+  private _settingsSub?: Promise<UnsubscribeFunc | undefined>;
+  private _subscribedFor = "";
 
   constructor() {
     super();
@@ -176,6 +180,16 @@ export class SeSettingsTab extends LitElement {
     this._profileName = "";
     this._profileDefault = false;
     this._dialogBusy = false;
+  }
+
+  connectedCallback(): void {
+    super.connectedCallback();
+    if (this._loadedFor) this._subscribe(this._loadedFor);
+  }
+
+  disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this._unsubscribe();
   }
 
   protected willUpdate(changed: PropertyValues<this>): void {
@@ -232,6 +246,8 @@ export class SeSettingsTab extends LitElement {
       this._resetEdits();
     }
     this._loadedFor = entryId;
+    // before reading so no change between the read and the subscription is lost
+    if (this._subscribedFor !== entryId) this._subscribe(entryId);
     this._loading = true;
     this._error = "";
     try {
@@ -246,6 +262,40 @@ export class SeSettingsTab extends LitElement {
     } finally {
       if (entryId === this.entryId) this._loading = false;
     }
+  }
+
+  private _subscribe(entryId: string): void {
+    this._unsubscribe();
+    this._subscribedFor = entryId;
+    this._settingsSub = this.api
+      .subscribeSettings(entryId, (changes) => this._applyRemote(entryId, changes))
+      .catch(() => undefined);
+  }
+
+  private _unsubscribe(): void {
+    const sub = this._settingsSub;
+    this._settingsSub = undefined;
+    this._subscribedFor = "";
+    sub?.then((unsub) => unsub?.()).catch(() => undefined);
+  }
+
+  /**
+   * Settings changed by Home Assistant or on the display: show them (and the settings they show or
+   * hide) right away. Unsaved edits stay unless they now match the display.
+   */
+  private _applyRemote(entryId: string, changes: Settings): void {
+    if (!this._data || entryId !== this._loadedFor || entryId !== this.entryId) return;
+    const edits = { ...this._edits };
+    const text = { ...this._text };
+    for (const [key, value] of Object.entries(changes)) {
+      if (key in edits && !same(edits[key], value)) continue;
+      delete edits[key];
+      // input text of a field that is not being edited shows the new value
+      if (!this._invalid.has(key)) delete text[key];
+    }
+    this._data = { ...this._data, settings: { ...this._data.settings, ...changes } };
+    this._edits = edits;
+    this._text = text;
   }
 
   /** Read the settings again (asks first when there are unsaved changes). */
@@ -310,13 +360,23 @@ export class SeSettingsTab extends LitElement {
     if (!keys.length) return;
     this._saving = true;
     try {
-      await this.api.settingsSet(this.entryId, changes);
-      const restart = this._data.schema.filter((d) => d.requires_restart && keys.includes(d.key));
+      const result = await this.api.settingsSet(this.entryId, changes);
+      const ignored = result.ignored ?? [];
+      const saved = keys.filter((key) => !ignored.includes(key));
+      const label = (key: string): string => this._data?.schema.find((d) => d.key === key)?.label || key;
+      const restart = this._data.schema.filter((d) => d.requires_restart && saved.includes(d.key));
+      const details = [
+        ...(ignored.length ? [`Not applied (the display does not know them): ${ignored.map(label).join(", ")}`] : []),
+        ...(restart.length ? [`Takes effect after an app restart: ${restart.map((d) => d.label || d.key).join(", ")}`] : []),
+      ];
+      const name = this._device?.name ?? "the display";
       toast(
         this,
-        `Saved ${plural(keys.length, "setting")} on ${this._device?.name ?? "the display"}`,
-        "success",
-        restart.length ? [`Takes effect after an app restart: ${restart.map((d) => d.label || d.key).join(", ")}`] : undefined,
+        ignored.length
+          ? `Saved ${plural(saved.length, "setting")} on ${name}, not applied: ${ignored.map(label).join(", ")}`
+          : `Saved ${plural(saved.length, "setting")} on ${name}`,
+        ignored.length ? "warning" : "success",
+        details.length ? details : undefined,
       );
       await this._load();
     } catch (err) {

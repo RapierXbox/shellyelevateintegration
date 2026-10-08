@@ -7,7 +7,7 @@ from collections.abc import Callable
 import logging
 from typing import Any
 
-from .models import Capabilities, DeviceInfo, MediaStatus, SettingDef
+from .models import Capabilities, DeviceInfo, MediaStatus, SettingDef, SettingsWrite
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,8 +87,8 @@ class ShellyElevateIntegrationApi(ABC):
         """Return all settings and update the cache."""
 
     @abstractmethod
-    async def set_settings(self, changes: dict[str, Any]) -> dict[str, Any]:
-        """Apply partial settings and return all settings."""
+    async def set_settings(self, changes: dict[str, Any]) -> SettingsWrite:
+        """Apply partial settings and return all settings with what was written."""
 
     @abstractmethod
     async def get_settings_schema(self) -> list[SettingDef]:

@@ -65,6 +65,8 @@ BUTTONS: tuple[ShellyElevateIntegrationButtonDescription, ...] = (
         key="reload_dashboard",
         translation_key="reload_dashboard",
         press_fn=lambda d: d.async_command("webview.reload"),
+        # only while the dashboard is on screen (not another app or lite mode)
+        supported_fn=lambda d: "webviewUrl" not in d.settings or d.setting_exists("webviewUrl"),
     ),
     ShellyElevateIntegrationButtonDescription(
         key="wake",
@@ -103,7 +105,12 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up buttons."""
-    async_add_entities(build_entities(entry.runtime_data, BUTTONS, ShellyElevateIntegrationButton))
+    async_add_entities(create_entities(entry.runtime_data))
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[ButtonEntity]:
+    """Buttons the display should have now."""
+    return build_entities(device, BUTTONS, ShellyElevateIntegrationButton)
 
 
 class ShellyElevateIntegrationButton(ShellyElevateIntegrationEntity, ButtonEntity):

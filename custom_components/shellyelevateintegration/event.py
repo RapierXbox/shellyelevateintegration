@@ -35,19 +35,24 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up event entities."""
-    device = entry.runtime_data
+    async_add_entities(create_entities(entry.runtime_data))
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[EventEntity]:
+    """Event entities the display should have now."""
     caps = device.info.capabilities
     if not caps.push:
         # The legacy app only publishes button/swipe events over MQTT.
-        return
+        return []
     entities: list[EventEntity] = [
         ShellyElevateIntegrationButtonEvent(device, "button", idx) for idx in range(caps.buttons)
     ]
     entities += [ShellyElevateIntegrationButtonEvent(device, "input", idx, caps.inputs) for idx in range(caps.inputs)]
     if caps.power_button:
         entities.append(ShellyElevateIntegrationButtonEvent(device, "power_button", None))
-    entities.append(ShellyElevateIntegrationSwipeEvent(device))
-    async_add_entities(entities)
+    if "publishSwipeEvents" not in device.settings or device.setting_on("publishSwipeEvents"):
+        entities.append(ShellyElevateIntegrationSwipeEvent(device))
+    return entities
 
 
 class _ShellyElevateIntegrationEvent(ShellyElevateIntegrationEntity, EventEntity):

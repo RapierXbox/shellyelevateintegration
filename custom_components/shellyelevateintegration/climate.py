@@ -65,14 +65,23 @@ async def async_setup_entry(
 ) -> None:
     """Set up the thermostat when it is enabled in the options."""
     device = entry.runtime_data
-    options = entry.options
-    if not options.get(OPT_THERMOSTAT) or device.info.capabilities.relays == 0:
-        return
-    relay = int(options.get(OPT_THERMOSTAT_RELAY, 0))
-    if relay >= device.info.capabilities.relays:
+    relays = device.info.capabilities.relays
+    relay = int(entry.options.get(OPT_THERMOSTAT_RELAY, 0))
+    if entry.options.get(OPT_THERMOSTAT) and relays and relay >= relays:
         _LOGGER.warning("%s: thermostat relay %s does not exist", entry.title, relay + 1)
-        return
-    async_add_entities([ShellyElevateIntegrationThermostat(device, relay, dict(options))])
+    async_add_entities(create_entities(device))
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[ClimateEntity]:
+    """The thermostat if it is enabled, its relay exists and it has a temperature source."""
+    options = device.entry.options
+    caps = device.info.capabilities
+    relay = int(options.get(OPT_THERMOSTAT_RELAY, 0))
+    if not options.get(OPT_THERMOSTAT) or relay >= caps.relays:
+        return []
+    if not options.get(OPT_THERMOSTAT_SENSOR) and not caps.temperature:
+        return []
+    return [ShellyElevateIntegrationThermostat(device, relay, dict(options))]
 
 
 class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, ClimateEntity, RestoreEntity):

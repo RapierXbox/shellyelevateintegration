@@ -28,6 +28,7 @@ from .api import (
 from .const import (
     CONF_DEVICE_ID,
     CONF_FEATURES_AUTO_ENABLED,
+    CONF_FEATURES_AUTO_HANDLED,
     CONF_FINGERPRINT,
     CONF_LEGACY,
     CONF_TOKEN,
@@ -35,6 +36,7 @@ from .const import (
     is_panel_entry,
 )
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
+from .features import FeatureWatcher
 from .repairs import async_check_issues
 from .services import async_setup_services
 from .settings.backups import BackupManager, async_get_backup_store
@@ -155,17 +157,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShellyElevateIntegration
         device.voice_enabled = device.info.capabilities.voice and await async_setup_component(
             hass, "assist_satellite", {}
         )
-        if not device.legacy and not entry.data.get(CONF_FEATURES_AUTO_ENABLED):
-            await _async_auto_enable_features(hass, device)
-        await hass.config_entries.async_forward_entry_setups(entry, _platforms(device))
+        # the entities depend on the visibility rules of the schema
+        await device.async_get_schema()
+        # only a display added with this version is still pending (see async_migrate_entry)
+        auto_enabled: set[str] = set()
+        if not device.legacy and entry.data.get(CONF_FEATURES_AUTO_ENABLED) is False:
+            auto_enabled = await _async_auto_enable_features(hass, device)
 
+        bluetooth_setup = None
         if device.info.capabilities.bluetooth and not device.legacy:
             if "bluetooth" in hass.config.components:
                 from .bluetooth import async_setup_bluetooth
 
-                entry.async_on_unload(await async_setup_bluetooth(hass, device))
+                bluetooth_setup = async_setup_bluetooth
             else:
                 _LOGGER.info("Not using %s as a Bluetooth proxy: the Bluetooth integration is not loaded", entry.title)
+
+        # entities only exist while their feature is on: a change reloads the entry
+        watcher = FeatureWatcher(hass, device, _platforms(device), bluetooth_setup)
+        entry.async_on_unload(watcher.async_stop)
+        await watcher.async_start()
+        await hass.config_entries.async_forward_entry_setups(entry, _platforms(device))
+        watcher.async_setup_done()
+        if auto_enabled:
+            _async_enable_feature_switches(hass, device, auto_enabled)
     except Exception:
         await device.async_shutdown()
         raise
@@ -184,38 +199,89 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShellyElevateIntegration
     return True
 
 
-async def _async_auto_enable_features(hass: HomeAssistant, device: ShellyElevateIntegrationDevice) -> None:
+FEATURE_SWITCHES = {
+    "mediaEnabled": "media_enabled",
+    "bleScannerEnabled": "bluetooth_proxy",
+    "haVoiceEnabled": "voice_assistant",
+}
+"""Settings turned on once on a newly added display -> unique id suffix of their switch."""
+
+
+async def _async_auto_enable_features(hass: HomeAssistant, device: ShellyElevateIntegrationDevice) -> set[str]:
     """Turn on media, the Bluetooth proxy and voice once on a newly added display.
 
-    They are off on the display by default but only work through this integration. Runs once
-    per entry so a feature the user turns off later stays off.
+    They are off on the display by default but only work through this integration. Each one is
+    handled once per entry so a feature the user turns off later stays off: a key that an older app
+    does not know yet stays pending until the app has it. Returns the keys turned on now.
     """
+    entry = device.entry
     caps = device.info.capabilities
     wanted = {
         "mediaEnabled": caps.speaker,
         "bleScannerEnabled": caps.bluetooth and "bluetooth" in hass.config.components,
         "haVoiceEnabled": device.voice_enabled,
     }
+    handled = set(entry.data.get(CONF_FEATURES_AUTO_HANDLED) or ())
     known = await device.async_known_keys()
-    changes = {key: True for key, want in wanted.items() if want and key in known and device.settings.get(key) is False}
+    changes: dict[str, bool] = {}
+    for key, want in wanted.items():
+        if key in handled or (want and key not in known):
+            continue
+        if want and device.settings.get(key) is False:
+            changes[key] = True
+        else:
+            # nothing to do on this display or already on
+            handled.add(key)
+    turned_on: set[str] = set()
     if changes:
         try:
-            await device.async_set_settings(changes)
+            result = await device.async_set_settings(changes)
         except HomeAssistantError as err:
-            _LOGGER.warning("Could not turn on %s on %s: %s", ", ".join(changes), device.entry.title, err)
-            return  # tried again on the next setup
-        _LOGGER.info("Turned on %s on %s", ", ".join(changes), device.entry.title)
-    # their switches were created disabled before so enable those the user did not touch
+            # tried again on the next setup
+            _LOGGER.warning("Could not turn on %s on %s: %s", ", ".join(changes), entry.title, err)
+        else:
+            turned_on = set(result.applied)
+            handled |= turned_on
+            _LOGGER.info("Turned on %s on %s", ", ".join(sorted(turned_on)) or "nothing", entry.title)
+    done = handled >= set(wanted)
+    data = {**entry.data, CONF_FEATURES_AUTO_ENABLED: done, CONF_FEATURES_AUTO_HANDLED: sorted(handled)}
+    if done:
+        data.pop(CONF_FEATURES_AUTO_HANDLED)
+    hass.config_entries.async_update_entry(entry, data=data)
+    return turned_on
+
+
+@callback
+def _async_enable_feature_switches(hass: HomeAssistant, device: ShellyElevateIntegrationDevice, keys: set[str]) -> None:
+    """Enable the switches of the features just turned on if the integration created them disabled.
+
+    The switches are enabled by default, so this only finds one that Home Assistant restored from a
+    removed entry of the same display that an older version created disabled. Enabling it makes Home
+    Assistant reload the entry 30 seconds later (EntityRegistryDisabledHandler), once.
+    """
     registry = er.async_get(hass)
-    for key in ("media_enabled", "bluetooth_proxy", "voice_assistant"):
-        entity_id = registry.async_get_entity_id(Platform.SWITCH, DOMAIN, f"{device.device_id}_{key}")
+    for key in keys:
+        entity_id = registry.async_get_entity_id(Platform.SWITCH, DOMAIN, f"{device.device_id}_{FEATURE_SWITCHES[key]}")
         if (
             entity_id is not None
             and (reg_entry := registry.async_get(entity_id)) is not None
             and reg_entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
         ):
             registry.async_update_entity(entity_id, disabled_by=None)
-    hass.config_entries.async_update_entry(device.entry, data={**device.entry.data, CONF_FEATURES_AUTO_ENABLED: True})
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry) -> bool:
+    """Migrate an entry to the current version."""
+    if entry.version > 1:
+        # a newer version of the integration made it
+        return False
+    if entry.minor_version < 2:
+        data = dict(entry.data)
+        if not is_panel_entry(entry):
+            # displays added before 1.2 are not new: never turn on their features (the microphone)
+            data.setdefault(CONF_FEATURES_AUTO_ENABLED, True)
+        hass.config_entries.async_update_entry(entry, data=data, minor_version=2)
+    return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry) -> bool:

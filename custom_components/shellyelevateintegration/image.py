@@ -42,9 +42,14 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up the screenshot image."""
-    device = entry.runtime_data
+    async_add_entities(create_entities(entry.runtime_data))
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[ImageEntity]:
+    """The screenshot if the app or ADB can take one."""
     if device.info.capabilities.screenshot or device.adb is not None:
-        async_add_entities([ShellyElevateIntegrationScreenshot(hass, device)])
+        return [ShellyElevateIntegrationScreenshot(device.hass, device)]
+    return []
 
 
 class ShellyElevateIntegrationScreenshot(ShellyElevateIntegrationEntity, ImageEntity):

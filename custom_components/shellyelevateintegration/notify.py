@@ -23,7 +23,12 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up the notify entity."""
-    async_add_entities([ShellyElevateIntegrationNotify(entry.runtime_data)])
+    async_add_entities(create_entities(entry.runtime_data))
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[NotifyEntity]:
+    """The notify entity (every display can show a message)."""
+    return [ShellyElevateIntegrationNotify(device)]
 
 
 class ShellyElevateIntegrationNotify(ShellyElevateIntegrationEntity, NotifyEntity):

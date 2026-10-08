@@ -16,11 +16,11 @@ from .device import ShellyElevateIntegrationDevice
 class ShellyElevateIntegrationEntityDescription(EntityDescription):
     """Common description fields."""
 
-    # Created only when this returns True for the display's capabilities.
+    # created only while true for the display and a change of it reloads the entry (see features.py)
     supported_fn: Callable[[ShellyElevateIntegrationDevice], bool] = lambda _device: True
     # State keys this entity depends on; None = update on every change.
     state_keys: tuple[str, ...] | None = None
-    # Setting key this entity reads/writes (settings-backed entities).
+    # Setting key this entity reads/writes (settings-backed entities); available while it is visible.
     setting_key: str | None = None
 
 
@@ -34,19 +34,23 @@ def has_cap(name: str) -> Callable[[ShellyElevateIntegrationDevice], bool]:
 
 
 def has_setting(key: str) -> Callable[[ShellyElevateIntegrationDevice], bool]:
-    """Return a supported_fn checking that the display knows a setting."""
+    """Return a supported_fn checking that the display has a setting and its feature is on."""
 
     def _check(device: ShellyElevateIntegrationDevice) -> bool:
-        return key in device.settings
+        return device.setting_exists(key)
 
     return _check
 
 
 def has_state(key: str) -> Callable[[ShellyElevateIntegrationDevice], bool]:
-    """Return a supported_fn checking that the display reports a state key."""
+    """Return a supported_fn for a state key of protocol v1.
+
+    A v1 display reports it (a value missing from one snapshot is unknown, not a missing entity).
+    The legacy client polls what the app can tell and its keys never go away again.
+    """
 
     def _check(device: ShellyElevateIntegrationDevice) -> bool:
-        return key in device.state
+        return not device.legacy or key in device.state
 
     return _check
 
@@ -80,8 +84,11 @@ class ShellyElevateIntegrationEntity(Entity):
 
     @property
     def available(self) -> bool:
-        """Entity is available while the display is reachable."""
-        return self.device.available
+        """Available while the display is reachable and the setting it writes can take effect."""
+        if not self.device.available:
+            return False
+        key = self.entity_description.setting_key
+        return key is None or self.device.setting_visible(key)
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to updates."""
@@ -98,9 +105,8 @@ class ShellyElevateIntegrationEntity(Entity):
 
     @callback
     def _handle_settings_message(self, message: dict[str, Any]) -> None:
-        if message.get("type") == "settings_changed" and self.entity_description.setting_key in (
-            message.get("changes") or {}
-        ):
+        # any setting may change whether this one is visible
+        if message.get("type") == "settings_changed":
             self.async_write_ha_state()
 
     @property

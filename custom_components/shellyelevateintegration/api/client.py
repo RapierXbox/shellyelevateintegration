@@ -14,6 +14,7 @@ from typing import Any
 
 import aiohttp
 
+from .app_schema import with_app_rules
 from .base import ShellyElevateIntegrationApi, base_url
 from .errors import (
     ShellyElevateIntegrationAuthError,
@@ -33,6 +34,7 @@ from .models import (
     DeviceInfo,
     Hello,
     SettingDef,
+    SettingsWrite,
     parse_api_version,
 )
 
@@ -445,11 +447,14 @@ class ShellyElevateIntegrationClient(ShellyElevateIntegrationApi):
         self.settings = dict(_object(_object(data).get("settings")))
         return self.settings
 
-    async def set_settings(self, changes: dict[str, Any]) -> dict[str, Any]:
-        """Apply partial settings."""
-        data = await self._request("PATCH", "/api/v1/settings", json=changes)
-        self.settings = dict(_object(_object(data).get("settings")))
-        return self.settings
+    async def set_settings(self, changes: dict[str, Any]) -> SettingsWrite:
+        """Apply partial settings; keys the display does not know come back in `ignored`."""
+        data = _object(await self._request("PATCH", "/api/v1/settings", json=changes))
+        self.settings = dict(_object(data.get("settings")))
+        ignored = data.get("ignored")
+        ignored = [key for key in ignored if isinstance(key, str)] if isinstance(ignored, list) else []
+        applied = {key: self.settings.get(key) for key in changes if key not in ignored}
+        return SettingsWrite(self.settings, applied, ignored)
 
     async def get_settings_schema(self) -> list[SettingDef]:
         """Return the settings schema."""
@@ -463,7 +468,7 @@ class ShellyElevateIntegrationClient(ShellyElevateIntegrationApi):
                 result.append(SettingDef.from_dict(item))
             except (TypeError, ValueError, AttributeError):
                 _LOGGER.debug("Ignoring invalid schema item from %s: %s", self.host, item)
-        return result
+        return with_app_rules(result)
 
     async def screenshot(self) -> bytes | None:
         """Return a PNG."""
@@ -567,9 +572,13 @@ class ShellyElevateIntegrationClient(ShellyElevateIntegrationApi):
                     self._set_connected(False)
                     self._emit({"type": "_incompatible"})
                     return
-                old_fw = self.info.fw_version if self.info else None
+                old = self.info
                 self.info = _with_transport_caps(new)
-                if old_fw is not None and new.fw_version != old_fw:
+                if old is not None and (
+                    new.fw_version != old.fw_version
+                    or new.capabilities != old.capabilities
+                    or new.reported_capabilities != old.reported_capabilities
+                ):
                     self._emit({"type": "_info_changed"})
             # Settings may have changed while we were away; their echoes are lost.
             self._schedule_settings_refresh()

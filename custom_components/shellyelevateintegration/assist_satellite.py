@@ -56,9 +56,12 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up the satellite."""
-    device = entry.runtime_data
-    if device.voice_enabled:
-        async_add_entities([ShellyElevateIntegrationAssistSatellite(device)])
+    async_add_entities(create_entities(entry.runtime_data))
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[assist_satellite.AssistSatelliteEntity]:
+    """The satellite while voice is switched on on the display."""
+    return [ShellyElevateIntegrationAssistSatellite(device)] if device.voice_active else []
 
 
 class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, assist_satellite.AssistSatelliteEntity):
@@ -301,7 +304,8 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
             event=str(event_type),
             timer={
                 "id": timer.id,
-                "name": timer.name,
+                # the app shows a json null as "null"
+                "name": timer.name or "",
                 "total": timer.seconds,
                 "remaining": timer.seconds_left,
                 "active": timer.is_active,

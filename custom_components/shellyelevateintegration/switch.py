@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -11,7 +10,6 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .api import Capabilities
 from .const import OPT_RELAYS_AS_LIGHTS
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .entity import (
@@ -32,12 +30,7 @@ class ShellyElevateIntegrationSwitchDescription(ShellyElevateIntegrationEntityDe
 
 
 def _setting_switch(
-    key: str,
-    setting: str,
-    *,
-    config: bool = True,
-    enabled: bool = True,
-    cap: Callable[[Capabilities], bool] | None = None,
+    key: str, setting: str, *, config: bool = True, enabled: bool = True
 ) -> ShellyElevateIntegrationSwitchDescription:
     return ShellyElevateIntegrationSwitchDescription(
         key=key,
@@ -46,27 +39,15 @@ def _setting_switch(
         entity_category=EntityCategory.CONFIG if config else None,
         entity_registry_enabled_default=enabled,
         state_keys=(),
-        supported_fn=_supported(setting, cap),
+        supported_fn=has_setting(setting),
     )
 
 
-def _supported(
-    setting: str, cap: Callable[[Capabilities], bool] | None
-) -> Callable[[ShellyElevateIntegrationDevice], bool]:
-    """The display knows the setting and has the hardware it needs."""
-    known = has_setting(setting)
-
-    def _check(device: ShellyElevateIntegrationDevice) -> bool:
-        # legacy capabilities are guessed from the model table so they do not rule anything out
-        return known(device) and (cap is None or device.legacy or cap(device.info.capabilities))
-
-    return _check
-
-
+# each one exists while its feature is on and is unavailable while its setting cannot take effect
 SETTING_SWITCHES: tuple[ShellyElevateIntegrationSwitchDescription, ...] = (
     _setting_switch("screensaver", "screenSaver"),
     _setting_switch("auto_brightness", "automaticBrightness"),
-    _setting_switch("wake_on_proximity", "wakeOnProximity", cap=lambda caps: caps.proximity),
+    _setting_switch("wake_on_proximity", "wakeOnProximity"),
     _setting_switch("touch_to_wake", "touchToWake"),
     # voice and the bluetooth proxy run through this integration (the app's own satellite
     # and ESPHome proxy were removed)
@@ -75,18 +56,13 @@ SETTING_SWITCHES: tuple[ShellyElevateIntegrationSwitchDescription, ...] = (
     _setting_switch("wake_word", "voiceWakeEnabled", enabled=False),
     _setting_switch("bluetooth_proxy", "bleScannerEnabled"),
     _setting_switch("media_enabled", "mediaEnabled"),
-    _setting_switch(
-        "buttons_switch_relays",
-        "buttonRelayEnabled",
-        enabled=False,
-        cap=lambda caps: caps.buttons >= 1 and caps.relays >= 1,
-    ),
-    _setting_switch("switch_on_swipe", "switchOnSwipe", enabled=False, cap=lambda caps: caps.relays >= 1),
+    _setting_switch("buttons_switch_relays", "buttonRelayEnabled", enabled=False),
+    _setting_switch("switch_on_swipe", "switchOnSwipe", enabled=False),
     _setting_switch("legacy_mqtt", "mqttEnabled", enabled=False),
     # v1 displays only: on a legacy display this server is the connection itself
     replace(
         _setting_switch("legacy_http_api", "httpServer", enabled=False),
-        supported_fn=lambda device: not device.legacy and "httpServer" in device.settings,
+        supported_fn=lambda device: not device.legacy and device.setting_exists("httpServer"),
     ),
 )
 
@@ -98,18 +74,22 @@ NIGHT_MODE = ShellyElevateIntegrationSwitchDescription(
 )
 
 
-async def async_setup_entry(
-    hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
-) -> None:
-    """Set up switches."""
-    device = entry.runtime_data
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[SwitchEntity]:
+    """Switches the display should have now."""
     entities: list[SwitchEntity] = []
-    if not entry.options.get(OPT_RELAYS_AS_LIGHTS, False):
+    if not device.entry.options.get(OPT_RELAYS_AS_LIGHTS, False):
         relays = device.info.capabilities.relays
         entities += [ShellyElevateIntegrationRelaySwitch(device, idx, relays) for idx in range(relays)]
     entities += build_entities(device, [NIGHT_MODE], ShellyElevateIntegrationNightModeSwitch)
     entities += build_entities(device, SETTING_SWITCHES, ShellyElevateIntegrationSettingSwitch)
-    async_add_entities(entities)
+    return entities
+
+
+async def async_setup_entry(
+    hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
+) -> None:
+    """Set up switches."""
+    async_add_entities(create_entities(entry.runtime_data))
 
 
 class ShellyElevateIntegrationRelaySwitch(ShellyElevateIntegrationRelayEntity, SwitchEntity):
@@ -143,6 +123,9 @@ class ShellyElevateIntegrationSettingSwitch(ShellyElevateIntegrationEntity, Swit
     def is_on(self) -> bool | None:
         """Current setting value."""
         value = self.setting
+        # legacy displays may store booleans as strings
+        if isinstance(value, str):
+            return value.strip().lower() in ("true", "1", "on")
         return None if value is None else bool(value)
 
     async def async_turn_on(self, **kwargs: Any) -> None:

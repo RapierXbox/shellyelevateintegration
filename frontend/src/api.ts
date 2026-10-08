@@ -95,6 +95,14 @@ export interface SettingsGetResult {
   known_caps?: string[];
   /** Settings the integration controls itself (key -> reason), shown read-only. */
   managed?: Record<string, string>;
+  /** Legacy app: values may be strings so conditions compare them loosely. */
+  legacy?: boolean;
+}
+
+export interface SettingsSetResult {
+  settings: Settings;
+  /** Keys the display does not know: nothing was written for them. */
+  ignored?: string[];
 }
 
 /** Keys that are never copied between displays (IDs, names, ...). */
@@ -289,8 +297,17 @@ export class ElevateApi {
     return this.ws("settings/get", { entry_id: entryId });
   }
 
-  async settingsSet(entryId: string, changes: Settings): Promise<Settings> {
-    return (await this.ws<{ settings: Settings }>("settings/set", { entry_id: entryId, changes })).settings;
+  settingsSet(entryId: string, changes: Settings): Promise<SettingsSetResult> {
+    return this.ws("settings/set", { entry_id: entryId, changes });
+  }
+
+  /** Setting changes of one display as they happen (from Home Assistant or on the display). */
+  subscribeSettings(entryId: string, callback: (changes: Settings) => void): Promise<UnsubscribeFunc> {
+    return this.hass.connection.subscribeMessage<{ changes: Settings }>(
+      (event) => callback(event.changes),
+      { type: `${PREFIX}/settings/subscribe`, entry_id: entryId },
+      { resubscribe: true },
+    );
   }
 
   settingsExport(entryId: string, includeSecrets: boolean): Promise<SettingsExport> {

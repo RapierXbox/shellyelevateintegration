@@ -105,6 +105,8 @@ class DeviceInfo:
     privileged: bool = False
     legacy: bool = False
     capabilities: Capabilities = field(default_factory=Capabilities)
+    reported_capabilities: dict[str, Any] = field(default_factory=dict)
+    """The `capabilities` object as the display sent it, with keys this version does not know."""
 
     @property
     def model_name(self) -> str:
@@ -114,6 +116,9 @@ class DeviceInfo:
     @classmethod
     def from_v1(cls, data: dict[str, Any]) -> DeviceInfo:
         """Build from a v1 `Info` object."""
+        caps = data.get("capabilities")
+        if not isinstance(caps, dict):
+            caps = {}
         return cls(
             device_id=data["id"],
             name=data.get("name") or DEFAULT_NAME,
@@ -124,7 +129,8 @@ class DeviceInfo:
             mac=data.get("mac"),
             android=data.get("android"),
             privileged=bool(data.get("privileged")),
-            capabilities=Capabilities.from_dict(data.get("capabilities") or {}),
+            capabilities=Capabilities.from_dict(caps),
+            reported_capabilities=dict(caps),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -205,6 +211,18 @@ class SettingDef:
     def as_dict(self) -> dict[str, Any]:
         """Return a dict."""
         return asdict(self)
+
+
+@dataclass(slots=True)
+class SettingsWrite:
+    """Result of writing settings."""
+
+    settings: dict[str, Any]
+    """All settings after the write."""
+    applied: dict[str, Any] = field(default_factory=dict)
+    """Written keys with the values the display resolved them to (a reset key has its default)."""
+    ignored: list[str] = field(default_factory=list)
+    """Keys the display does not know, so nothing was written for them."""
 
 
 @dataclass(slots=True)

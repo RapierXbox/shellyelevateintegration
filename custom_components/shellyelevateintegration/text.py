@@ -9,7 +9,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .device import ShellyElevateIntegrationConfigEntry
+from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .entity import (
     ShellyElevateIntegrationEntity,
     ShellyElevateIntegrationEntityDescription,
@@ -42,7 +42,12 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up texts."""
-    async_add_entities(build_entities(entry.runtime_data, TEXTS, ShellyElevateIntegrationSettingText))
+    async_add_entities(create_entities(entry.runtime_data))
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[TextEntity]:
+    """Texts the display should have now."""
+    return build_entities(device, TEXTS, ShellyElevateIntegrationSettingText)
 
 
 class ShellyElevateIntegrationSettingText(ShellyElevateIntegrationEntity, TextEntity):

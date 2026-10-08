@@ -44,6 +44,7 @@ from .api import (
 )
 from .const import (
     CONF_DEVICE_ID,
+    CONF_FEATURES_AUTO_ENABLED,
     CONF_FINGERPRINT,
     CONF_LEGACY,
     CONF_MAC,
@@ -87,7 +88,7 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow."""
 
     VERSION = 1
-    MINOR_VERSION = 1
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         """Initialize."""
@@ -542,6 +543,8 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_TOKEN: self._token,
             CONF_FINGERPRINT: self._hello.fingerprint,
             CONF_MAC: self._hello.mac,
+            # media bluetooth and voice are turned on once on the first setup
+            CONF_FEATURES_AUTO_ENABLED: False,
         }
         return self.async_create_entry(title=self._hello.name, data=data)
 

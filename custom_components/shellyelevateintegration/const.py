@@ -20,7 +20,12 @@ CONF_PANEL: Final = "panel"
 PANEL_UNIQUE_ID: Final = "_panel"
 """SHA-256 of the display's TLS certificate, pinned at pairing (lowercase hex)."""
 CONF_FEATURES_AUTO_ENABLED: Final = "features_auto_enabled"
-"""Media, the Bluetooth proxy and voice were turned on once; later user choices stand."""
+"""False on a new display until media, the Bluetooth proxy and voice were turned on once.
+
+Later user choices stand. Entries from before this flag existed are migrated to True.
+"""
+CONF_FEATURES_AUTO_HANDLED: Final = "features_auto_handled"
+"""Feature keys already handled while CONF_FEATURES_AUTO_ENABLED is still False."""
 
 # Options
 OPT_RELAYS_AS_LIGHTS: Final = "relays_as_lights"
@@ -52,6 +57,9 @@ APP_REPO: Final = "RapierXbox/ShellyElevate"
 
 # Fired on the event bus for every event the display reports (buttons, swipes, ...)
 EVENT_SHELLY_ELEVATE: Final = "shellyelevateintegration_event"
+
+SIGNAL_SETTINGS_CHANGED: Final = "shellyelevateintegration_settings_changed_{}"
+"""Dispatcher signal with the changed settings of one entry (format with the entry id); survives reloads."""
 
 
 def is_panel_entry(entry: ConfigEntry) -> bool:

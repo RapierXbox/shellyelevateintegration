@@ -9,7 +9,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .device import ShellyElevateIntegrationConfigEntry
+from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .entity import (
     ShellyElevateIntegrationEntity,
     ShellyElevateIntegrationEntityDescription,
@@ -52,18 +52,22 @@ SELECTS: tuple[ShellyElevateIntegrationSelectDescription, ...] = (
 )
 
 
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[SelectEntity]:
+    """Selects the display should have now."""
+    entities: list[SelectEntity] = build_entities(device, SELECTS, ShellyElevateIntegrationSettingSelect)
+    if device.voice_active:
+        # Imported lazily: it pulls in assist_pipeline, which is only set up for voice displays.
+        from .voice import async_get_voice_selects
+
+        entities += async_get_voice_selects(device.hass, device)
+    return entities
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up selects."""
-    device = entry.runtime_data
-    entities: list[SelectEntity] = build_entities(device, SELECTS, ShellyElevateIntegrationSettingSelect)
-    if device.voice_enabled:
-        # Imported lazily: it pulls in assist_pipeline, which is only set up for voice displays.
-        from .voice import async_get_voice_selects
-
-        entities += async_get_voice_selects(hass, device)
-    async_add_entities(entities)
+    async_add_entities(create_entities(entry.runtime_data))
 
 
 class ShellyElevateIntegrationSettingSelect(ShellyElevateIntegrationEntity, SelectEntity):

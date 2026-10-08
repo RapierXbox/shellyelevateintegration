@@ -12,11 +12,16 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo as HADeviceInfo
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .api import ShellyElevateIntegrationApi, ShellyElevateIntegrationError
+from .api.app_schema import app_schema
 from .api.base import base_url
-from .api.models import DeviceInfo, SettingDef
-from .const import DOMAIN, EVENT_SHELLY_ELEVATE, MANUFACTURER
+from .api.legacy_schema import LEGACY_CAPS, LEGACY_SCHEMA
+from .api.models import DeviceInfo, SettingDef, SettingsWrite
+from .api.visibility import VisibilityEvaluator, condition_holds
+from .const import DOMAIN, EVENT_SHELLY_ELEVATE, MANUFACTURER, SIGNAL_SETTINGS_CHANGED
+from .features import FEATURE_KEYS
 
 if TYPE_CHECKING:
     from .adb.manager import AdbManager
@@ -53,6 +58,7 @@ class ShellyElevateIntegrationDevice:
         self.permissions: PermissionGuard | None = None
         self.screenshot_entity: ShellyElevateIntegrationScreenshot | None = None
         self.voice_enabled = False
+        """Voice can run through this integration (microphone and the Assist pipeline stack)."""
         self.device_entry_id: str | None = None
         self._schema: list[SettingDef] | None = None
 
@@ -88,6 +94,88 @@ class ShellyElevateIntegrationDevice:
     def legacy(self) -> bool:
         """Whether this is a legacy (pre-v1) app."""
         return self.client.legacy
+
+    @property
+    def schema(self) -> list[SettingDef] | None:
+        """The cached settings schema (fetched with async_get_schema)."""
+        return self._schema
+
+    @property
+    def capabilities(self) -> dict[str, Any]:
+        """Capabilities as `requires` of the schema refers to them (with keys this version does not know)."""
+        caps = self.info.capabilities.as_dict()
+        caps.pop("optional_relays_from", None)
+        if not self.legacy:
+            caps.update(self.info.reported_capabilities)
+        return caps
+
+    @property
+    def known_caps(self) -> frozenset[str]:
+        """Capabilities the display reports; `requires` on any other one counts as met.
+
+        Every key a v1 display sends is known, also one this version does not know, so a capability
+        it reports as false fails like on the display. The legacy client derives a few from the model.
+        """
+        return LEGACY_CAPS if self.legacy else frozenset(self.info.reported_capabilities)
+
+    def visibility(self) -> VisibilityEvaluator:
+        """Visibility of the settings with the current values (build a new one after changes)."""
+        schema = self._schema
+        if not schema:
+            # not fetched yet or the display had none: the rules the app itself uses
+            schema = (
+                [SettingDef.from_dict(item) for item in LEGACY_SCHEMA]
+                if self.legacy
+                else app_schema(set(self.settings))
+            )
+        # legacy displays may report values as strings
+        return VisibilityEvaluator(schema, self.settings, self.capabilities, self.known_caps, loose=self.legacy)
+
+    def setting_visible(self, key: str) -> bool:
+        """Whether the display has the setting and it can take effect right now (as the panel shows it).
+
+        Entities of a setting are available while this holds.
+        """
+        if key not in self.settings:
+            return False
+        evaluator = self.visibility()
+        # a key the schema does not describe has no rules
+        return evaluator.definition(key) is None or evaluator.visible(key)
+
+    def setting_exists(self, key: str) -> bool:
+        """Whether entities of the setting exist: like setting_visible on the feature toggles only.
+
+        See features.py: a condition on a setting outside FEATURE_KEYS makes the entity unavailable
+        instead, so a side effect of a command never adds or removes entities.
+        """
+        if key not in self.settings:
+            return False
+        evaluator = self.visibility()
+        return evaluator.definition(key) is None or evaluator.visible_on(key, FEATURE_KEYS)
+
+    def setting_on(self, key: str) -> bool:
+        """Whether a feature toggle exists and is on."""
+        return self.setting_exists(key) and condition_holds({"eq": True}, self.settings.get(key), loose=self.legacy)
+
+    @property
+    def voice_active(self) -> bool:
+        """Voice runs through this integration: possible and switched on on the display."""
+        return self.voice_enabled and not self.legacy and self.setting_on("haVoiceEnabled")
+
+    @property
+    def media_active(self) -> bool:
+        """Media playback is switched on (the legacy app plays without the setting)."""
+        if not self.info.capabilities.speaker:
+            return False
+        if self.legacy:
+            value = self.settings.get("mediaEnabled")
+            return value is None or condition_holds({"eq": True}, value, loose=True)
+        return self.setting_on("mediaEnabled")
+
+    @property
+    def bluetooth_active(self) -> bool:
+        """The display forwards BLE advertisements to this integration."""
+        return not self.legacy and self.info.capabilities.bluetooth and self.setting_on("bleScannerEnabled")
 
     @property
     def device_info(self) -> HADeviceInfo:
@@ -172,6 +260,10 @@ class ShellyElevateIntegrationDevice:
             return
         elif message.get("type") == "_info_changed":
             self._async_refresh_device_registry()
+        elif message.get("type") == "settings_changed":
+            async_dispatcher_send(
+                self.hass, SIGNAL_SETTINGS_CHANGED.format(self.entry.entry_id), dict(message.get("changes") or {})
+            )
         for cb in list(self._listeners.message):
             _safe_call(cb, message)
 
@@ -247,17 +339,37 @@ class ShellyElevateIntegrationDevice:
                 translation_placeholders={"error": str(err)},
             ) from err
 
-    async def async_set_settings(self, changes: dict[str, Any]) -> dict[str, Any]:
-        """Write settings and translate API errors."""
-        try:
-            result = await self.client.set_settings(changes)
-        except ShellyElevateIntegrationError as err:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN,
-                translation_key="settings_failed",
-                translation_placeholders={"error": str(err)},
-            ) from err
-        self._on_message({"type": "settings_changed", "changes": changes})
+    async def async_set_settings(self, changes: dict[str, Any]) -> SettingsWrite:
+        """Write settings and translate API errors; keys the display does not know are not written."""
+        changes = dict(changes)
+        skipped: list[str] = []
+        if not self.legacy and (schema := await self.async_get_schema()):
+            # apps before `ignored` reject a whole patch with one unknown key
+            known = {item.key for item in schema}
+            skipped = [key for key in changes if key not in known]
+            for key in skipped:
+                del changes[key]
+        if changes:
+            try:
+                result = await self.client.set_settings(changes)
+            except ShellyElevateIntegrationError as err:
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="settings_failed",
+                    translation_placeholders={"error": str(err)},
+                ) from err
+        else:
+            result = SettingsWrite(self.settings)
+        result.ignored = sorted({*skipped, *result.ignored})
+        if result.ignored:
+            _LOGGER.warning(
+                "%s does not know these settings so they were not written: %s",
+                self.entry.title,
+                ", ".join(result.ignored),
+            )
+        if result.applied and not self.legacy:
+            # the legacy client reports its writes itself
+            self._on_message({"type": "settings_changed", "changes": dict(result.applied)})
         return result
 
 

@@ -161,14 +161,19 @@ class SettingsFixFlow(RepairsFlow):
         # the display may ask to allow debugging for the key of home assistant
         if not await adb.async_is_reachable(auth_timeout=60):
             return self.async_abort(reason="adb_unreachable", description_placeholders={"host": device.client.host})
-        if device.adb is None:
-            # adb works so use it from now on (updates and later grants)
-            from .adb.manager import async_get_adb_manager
+        if device.adb is not None:
+            return await self._async_grant(device)
+        # adb works so use it from now on (updates and later grants)
+        from .adb.manager import async_get_adb_manager
 
-            entry = device.entry
-            self.hass.config_entries.async_update_entry(entry, options={**entry.options, OPT_ADB: True})
-            device.adb = await async_get_adb_manager(self.hass, device)
-        return await self._async_grant(device)
+        entry = device.entry
+        self.hass.config_entries.async_update_entry(entry, options={**entry.options, OPT_ADB: True})
+        device.adb = await async_get_adb_manager(self.hass, device)
+        try:
+            return await self._async_grant(device)
+        finally:
+            # the screenshot image and the grant permissions button only exist with adb
+            self.hass.config_entries.async_schedule_reload(entry.entry_id)
 
     async def _async_grant(self, device: ShellyElevateIntegrationDevice) -> RepairsFlowResult:
         if device.permissions is None:

@@ -41,6 +41,9 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
 ];
 
 class ShellyElevatePanel extends LitElement {
+  /** URL of the bundle that defined the element. */
+  static bundle = import.meta.url;
+
   static properties = {
     hass: { attribute: false },
     narrow: { type: Boolean, reflect: true },
@@ -428,6 +431,9 @@ class ShellyElevatePanel extends LitElement {
   ];
 }
 
+// an open tab keeps the element of the older bundle after an update and only a reload replaces it
+const previous = customElements.get("shelly-elevate-panel") as { bundle?: string } | undefined;
+if (previous && previous.bundle !== ShellyElevatePanel.bundle) location.reload();
 define("shelly-elevate-panel", ShellyElevatePanel);
 
 declare global {

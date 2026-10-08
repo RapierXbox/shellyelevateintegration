@@ -71,9 +71,12 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Set up the media player."""
-    device = entry.runtime_data
-    if device.info.capabilities.speaker:
-        async_add_entities([ShellyElevateIntegrationMediaPlayer(device)])
+    async_add_entities(create_entities(entry.runtime_data))
+
+
+def create_entities(device: ShellyElevateIntegrationDevice) -> list[MediaPlayerEntity]:
+    """The media player while playback is switched on."""
+    return [ShellyElevateIntegrationMediaPlayer(device)] if device.media_active else []
 
 
 class ShellyElevateIntegrationMediaPlayer(ShellyElevateIntegrationEntity, MediaPlayerEntity):
@@ -125,9 +128,8 @@ class ShellyElevateIntegrationMediaPlayer(ShellyElevateIntegrationEntity, MediaP
     @property
     def available(self) -> bool:
         """Playback must be enabled in the settings (off by default on v1 displays)."""
-        if not super().available:
-            return False
-        return bool(self.device.settings.get("mediaEnabled", self.device.legacy))
+        # the same check as creation so a legacy "false" string counts as off
+        return super().available and self.device.media_active
 
     @property
     def state(self) -> MediaPlayerState:

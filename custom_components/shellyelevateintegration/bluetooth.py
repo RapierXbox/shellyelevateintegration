@@ -34,7 +34,8 @@ class ShellyElevateIntegrationBleScanner(BaseHaRemoteScanner):
             )
 
 
-async def async_setup_bluetooth(hass: HomeAssistant, device: ShellyElevateIntegrationDevice) -> Callable[[], None]:
+@callback
+def async_setup_bluetooth(hass: HomeAssistant, device: ShellyElevateIntegrationDevice) -> Callable[[], None]:
     """Register the display as a Bluetooth scanner. Returns an unload callback."""
     info = device.info
     source = dr.format_mac(info.mac).upper() if info.mac else device.device_id

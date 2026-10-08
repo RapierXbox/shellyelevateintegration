@@ -564,6 +564,9 @@
     "no_install_method": {
       "message": "Dieses Display kann nur mit aktiviertem ADB aktualisiert werden."
     },
+    "app_update_timeout": {
+      "message": "Das Display hat das App-Update nicht innerhalb von 10 Minuten abgeschlossen."
+    },
     "app_update_failed": {
       "message": "Die App konnte sich nicht selbst aktualisieren: {reason}"
     },
