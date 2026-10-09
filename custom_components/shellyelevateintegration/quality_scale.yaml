@@ -1,0 +1,93 @@
+rules:
+  # Bronze
+  action-setup:
+    status: done
+    comment: Actions are registered in async_setup (services.py).
+  appropriate-polling:
+    status: done
+    comment: >
+      Displays with protocol v1 push over a WebSocket. Only the legacy app is polled (5 s / 30 s)
+      and the app update entity checks GitHub every 6 hours.
+  brands:
+    status: done
+    comment: Brand images ship in the brand folder of the integration.
+  common-modules:
+    status: done
+    comment: Base entity in entity.py, the push runtime object in device.py, API client in api/.
+  config-flow-test-coverage:
+    status: done
+    comment: >
+      tests/test_config_flow.py and tests/test_options_flow.py cover config_flow.py to 100 %; every flow
+      ends in CREATE_ENTRY or ABORT. CI fails below 100 % (.github/workflows/pytest.yml).
+  config-flow: done
+  dependency-transparency: done
+  docs-actions:
+    status: done
+    comment: README (Actions) and services.yaml / strings.json.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
+
+  # Silver
+  action-exceptions: done
+  config-entry-unloading: done
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
+  entity-unavailable: done
+  integration-owner: done
+  log-when-unavailable: done
+  parallel-updates: done
+  reauthentication-flow: done
+  test-coverage:
+    status: done
+    comment: >
+      443 tests (pytest-homeassistant-custom-component, HA 2026.10.0), 99 % overall: every module at
+      100 % except settings/profiles.py (99 %, one unreachable line). CI fails below 95 %.
+
+  # Gold
+  devices: done
+  diagnostics: done
+  discovery-update-info:
+    status: done
+    comment: >
+      Zeroconf moves a paired display to its new address once it presents the pinned certificate.
+  discovery:
+    status: done
+    comment: Zeroconf for displays running ShellyElevate and for stock Wall Displays.
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices:
+    status: exempt
+    comment: Each config entry is exactly one display, so no devices are added at runtime.
+  entity-category: done
+  entity-device-class: done
+  entity-disabled-by-default: done
+  entity-translations: done
+  exception-translations: done
+  icon-translations: done
+  reconfiguration-flow: done
+  repair-issues: done
+  stale-devices:
+    status: done
+    comment: >
+      Entities of features that were turned off and devices left over from an earlier pairing
+      are removed after setup (features.py).
+
+  # Platinum
+  async-dependency: done
+  inject-websession: done
+  strict-typing:
+    status: todo
+    comment: The integration has no py.typed and is not checked with mypy.

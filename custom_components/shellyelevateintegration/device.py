@@ -21,7 +21,7 @@ from .api.legacy_schema import LEGACY_CAPS, LEGACY_SCHEMA
 from .api.models import DeviceInfo, SettingDef, SettingsWrite
 from .api.visibility import VisibilityEvaluator, condition_holds
 from .const import DOMAIN, EVENT_SHELLY_ELEVATE, MANUFACTURER, SIGNAL_SETTINGS_CHANGED
-from .features import FEATURE_KEYS
+from .features import FEATURE_KEYS, SCHEMA_LOADED
 
 if TYPE_CHECKING:
     from .adb.manager import AdbManager
@@ -284,7 +284,7 @@ class ShellyElevateIntegrationDevice:
             _LOGGER.info("%s is available again", self.entry.title)
             self._async_refresh_device_registry()
         else:
-            _LOGGER.warning("%s is unavailable", self.entry.title)
+            _LOGGER.info("%s is unavailable", self.entry.title)
         for cb in list(self._listeners.availability):
             _safe_call(cb)
 
@@ -308,6 +308,10 @@ class ShellyElevateIntegrationDevice:
                 self._schema = await self.client.get_settings_schema()
             except ShellyElevateIntegrationError as err:
                 _LOGGER.debug("Could not fetch the settings schema of %s: %s", self.entry.title, err)
+            else:
+                if self._schema:
+                    # a check that waited for the schema runs now
+                    self._on_message({"type": SCHEMA_LOADED})
         return self._schema
 
     async def async_known_keys(self) -> set[str]:

@@ -39,6 +39,8 @@ APP_RULES: list[dict[str, Any]] = [
     _r("webviewUrl", "string", "", visible_if=_WEBVIEW),
     _r("ignoreSslErrors", "bool", False, visible_if=_WEBVIEW),
     _r("extendedJavascriptInterface", "bool", False, visible_if=_WEBVIEW),
+    _r("webview.modernFrontend", "bool", False, visible_if=_WEBVIEW),
+    _r("webview.reduceMotion", "bool", False, visible_if=_WEBVIEW),
     _r("app.package", "string", "", visible_if=_APP),
     _r("app.component", "string", "", visible_if=_APP, read_only=True),
     _r("app.keepInFront", "bool", True, visible_if=_APP),

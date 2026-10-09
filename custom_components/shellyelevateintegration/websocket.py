@@ -29,7 +29,11 @@ from .settings.profiles import async_get_profile_manager
 def _device(hass: HomeAssistant, entry_id: str) -> ShellyElevateIntegrationDevice:
     entry = hass.config_entries.async_get_entry(entry_id)
     if entry is None or entry.domain != DOMAIN or is_panel_entry(entry) or entry.state is not ConfigEntryState.LOADED:
-        raise HomeAssistantError(f"Display {entry_id} is not loaded")
+        raise HomeAssistantError(
+            translation_domain=DOMAIN,
+            translation_key="device_not_loaded",
+            translation_placeholders={"device": entry.title if entry is not None else entry_id},
+        )
     return entry.runtime_data
 
 

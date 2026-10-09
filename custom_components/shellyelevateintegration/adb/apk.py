@@ -103,7 +103,7 @@ async def async_download_apk(hass: HomeAssistant, release: AppRelease) -> bytes:
         async with session.get(release.apk_url, timeout=aiohttp.ClientTimeout(total=300)) as resp:
             resp.raise_for_status()
             if (resp.content_length or 0) > MAX_APK_SIZE:
-                raise HomeAssistantError("APK too large")
+                raise HomeAssistantError(translation_domain=DOMAIN, translation_key="apk_too_large")
             data = await resp.read()
     except (aiohttp.ClientError, TimeoutError) as err:
         raise HomeAssistantError(

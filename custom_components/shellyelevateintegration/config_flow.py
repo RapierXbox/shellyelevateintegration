@@ -43,8 +43,10 @@ from .api import (
     parse_api_version,
 )
 from .const import (
+    AUTO_FEATURES,
     CONF_DEVICE_ID,
     CONF_FEATURES_AUTO_ENABLED,
+    CONF_FEATURES_AUTO_HANDLED,
     CONF_FINGERPRINT,
     CONF_LEGACY,
     CONF_MAC,
@@ -97,6 +99,8 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
         self._hello: Hello | None = None
         self._pairing_id: str | None = None
         self._token: str | None = None
+        # auto enabled features a profile or the installer already set
+        self._features_handled: set[str] = set()
 
     # ---------------------------------------------------------------- entry points
 
@@ -284,6 +288,7 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
             # Verified over ADB, so it replaces the stored token and certificate.
             updates |= {CONF_TOKEN: self._token, CONF_FINGERPRINT: self._hello.fingerprint, CONF_LEGACY: False}
         self._abort_if_unique_id_configured(updates=updates)
+        self._features_handled |= AUTO_FEATURES & set(discovery_info.get(CONF_FEATURES_AUTO_HANDLED) or ())
         if profile_id := discovery_info.get(CONF_PROFILE):
             await self._async_apply_profile(profile_id)
         return self._async_create()
@@ -423,6 +428,8 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
         changes = manager.settings_for_device(profile_id, schema, known)
         if changes:
             await client.set_settings(changes)
+            # the profile decides these so the first setup must not turn them on
+            self._features_handled |= AUTO_FEATURES & set(changes)
 
     # ---------------------------------------------------------------- reauth / reconfigure
 
@@ -546,11 +553,13 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
             # media bluetooth and voice are turned on once on the first setup
             CONF_FEATURES_AUTO_ENABLED: False,
         }
+        if self._features_handled:
+            data[CONF_FEATURES_AUTO_HANDLED] = sorted(self._features_handled)
         return self.async_create_entry(title=self._hello.name, data=data)
 
     @classmethod
     @callback
-    def async_supports_options(cls, config_entry: ConfigEntry) -> bool:
+    def async_supports_options_flow(cls, config_entry: ConfigEntry) -> bool:
         """The panel-only entry has no options."""
         return not is_panel_entry(config_entry)
 
@@ -570,6 +579,9 @@ class ShellyElevateIntegrationOptionsFlow(OptionsFlowWithReload):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """General options."""
+        if is_panel_entry(self.config_entry):
+            # the panel entry has no display and no runtime data
+            return self.async_abort(reason="panel_entry")
         errors: dict[str, str] = {}
         if user_input is not None:
             self._options = {**self.config_entry.options, **user_input}

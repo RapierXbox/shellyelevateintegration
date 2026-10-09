@@ -1,0 +1,27 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v6
+      - name: Install the test requirements
+        run: uv pip install --system -r requirements_test.txt
+      - name: Run the tests
+        run: >
+          pytest -n auto
+          --cov=custom_components.shellyelevateintegration
+          --cov-report=term-missing
+          --cov-fail-under=95
+      # the config flow needs full coverage (config-flow-test-coverage of the quality scale)
+      - name: Config flow coverage
+        run: coverage report --include="*/config_flow.py" --fail-under=100

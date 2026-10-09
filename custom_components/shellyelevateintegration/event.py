@@ -9,6 +9,7 @@ from homeassistant.components.event import EventDeviceClass, EventEntity, EventE
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .api.visibility import condition_holds
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .entity import ShellyElevateIntegrationEntity, ShellyElevateIntegrationEntityDescription, indexed_name
 
@@ -24,6 +25,8 @@ def _swipe_type(direction: str, fingers: int) -> str:
     """Event type of a swipe: "left" for one finger, "left_2" for two, ..."""
     return direction if fingers == 1 else f"{direction}_{fingers}"
 
+
+SWIPE_SETTING = "publishSwipeEvents"
 
 PRESS_TYPES = ["single", "double", "triple", "long"]
 SWIPE_TYPES = [
@@ -50,8 +53,8 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[EventEntity]
     entities += [ShellyElevateIntegrationButtonEvent(device, "input", idx, caps.inputs) for idx in range(caps.inputs)]
     if caps.power_button:
         entities.append(ShellyElevateIntegrationButtonEvent(device, "power_button", None))
-    if "publishSwipeEvents" not in device.settings or device.setting_on("publishSwipeEvents"):
-        entities.append(ShellyElevateIntegrationSwipeEvent(device))
+    # publishSwipeEvents only makes it unavailable (see features.py)
+    entities.append(ShellyElevateIntegrationSwipeEvent(device))
     return entities
 
 
@@ -122,6 +125,24 @@ class ShellyElevateIntegrationSwipeEvent(_ShellyElevateIntegrationEvent):
     def __init__(self, device: ShellyElevateIntegrationDevice) -> None:
         """Initialize."""
         super().__init__(device, ShellyElevateIntegrationEventDescription(key="swipe", translation_key="swipe"))
+
+    @property
+    def available(self) -> bool:
+        """Unavailable while the display does not publish swipes."""
+        if not super().available:
+            return False
+        value = self.device.settings.get(SWIPE_SETTING)
+        return value is None or condition_holds({"eq": True}, value, loose=self.device.legacy)
+
+    async def async_added_to_hass(self) -> None:
+        """Follow the setting that turns swipe events on and off."""
+        await super().async_added_to_hass()
+        self.async_on_remove(self.device.async_add_message_listener(self._on_settings))
+
+    @callback
+    def _on_settings(self, message: dict[str, Any]) -> None:
+        if message.get("type") == "settings_changed" and SWIPE_SETTING in (message.get("changes") or {}):
+            self.async_write_ha_state()
 
     def _match(self, message: dict[str, Any]) -> str | None:
         if message.get("event") != "swipe":

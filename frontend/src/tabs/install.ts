@@ -62,6 +62,7 @@ const PROVISION_LABELS: Record<string, string> = {
   overlay: "Allow drawing over other apps",
   usage_stats: "Allow reading the app in front",
   doze_whitelist: "Exclude from battery optimisation",
+  secure_settings: "Let the app switch ADB over Wi‑Fi",
   disable_stock: "Keep the stock Shelly app in the background",
   stop: "Stop the app",
   start: "Start the app",
@@ -87,6 +88,7 @@ const NON_FATAL = new Set([
   "overlay",
   "usage_stats",
   "doze_whitelist",
+  "secure_settings",
   "disable_stock",
   "stop",
   "start",
@@ -136,6 +138,7 @@ const provisionStepsFor = (opts: ProvisionOptions): StepState[] => {
     "overlay",
     "usage_stats",
     "doze_whitelist",
+    "secure_settings",
   );
   if (opts.disable_stock) ids.push("disable_stock");
   ids.push("start", ...FINAL_STEPS);
@@ -176,7 +179,7 @@ const OPTION_LABELS: Record<string, [string, string?]> = {
   ],
   disable_stock: [
     "Keep the stock Shelly app in the background",
-    "Keeps the stock Shelly app from covering Shelly Elevate. On Android 11 models (Wall Display XL, X2i, X1i) the stock app is only kept from drawing on top and stopped; on older models it is disabled, which leaves the display without a home app.",
+    "Keeps the stock Shelly app from covering Shelly Elevate. On Android 11 models (Wall Display XL, X2i and X1i) it stays the home app and is only kept from drawing on top and stopped. On older models it is disabled where Android allows it, which leaves the display without a home app, and otherwise kept from drawing on top.",
   ],
   profile_id: ["Settings profile", "Applied to the display after pairing."],
   dashboard_url: ["Dashboard URL", "The page the display shows, e.g. http://homeassistant.local:8123/lovelace/0"],

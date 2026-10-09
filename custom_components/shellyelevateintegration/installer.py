@@ -38,7 +38,14 @@ from .api import (
     ShellyElevateIntegrationError,
     async_probe,
 )
-from .const import CONF_FINGERPRINT, CONF_TOKEN, DOMAIN, UPDATE_CHANNEL_STABLE
+from .const import (
+    AUTO_FEATURES,
+    CONF_FEATURES_AUTO_HANDLED,
+    CONF_FINGERPRINT,
+    CONF_TOKEN,
+    DOMAIN,
+    UPDATE_CHANNEL_STABLE,
+)
 from .settings.profiles import async_get_profile_manager
 
 _LOGGER = logging.getLogger(__name__)
@@ -133,6 +140,9 @@ async def async_provision(hass: HomeAssistant, options: ProvisionOptions, progre
     progress("wait_app", {"status": "done", "legacy": hello.legacy, "version": hello.fw_version})
 
     data: dict[str, Any] = {CONF_HOST: options.host, CONF_PORT: hello.port}
+    if handled := AUTO_FEATURES & set(settings):
+        # the profile decides these so the first setup must not turn them on
+        data[CONF_FEATURES_AUTO_HANDLED] = sorted(handled)
     progress("provision", {"status": "running"})
     try:
         if hello.legacy:
@@ -181,7 +191,12 @@ async def async_provision(hass: HomeAssistant, options: ProvisionOptions, progre
         )
     progress("config_entry", {"status": "done", "entry_id": entry_id, "updated": updated})
     # The HA device exists once the entry has been set up; the panel falls back to its display list.
-    device = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, hello.device_id)})
+    devices = dr.async_get(hass)
+    if hasattr(devices, "async_get_device_by_identifier"):
+        # ha 2026.10 and newer: identifiers are unique per config entry
+        device = devices.async_get_device_by_identifier((DOMAIN, hello.device_id), entry_id)
+    else:
+        device = devices.async_get_device(identifiers={(DOMAIN, hello.device_id)})
     return {
         "entry_id": entry_id,
         "device_id": device.id if device else None,

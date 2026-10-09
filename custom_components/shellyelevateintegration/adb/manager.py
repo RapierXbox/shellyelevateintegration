@@ -278,6 +278,9 @@ class AdbManager:
             progress("download", {"status": "done", "bytes": len(apk)})
         await self.async_install_apk(apk, progress)
         if post_install:
+            if sdk is None:
+                # the permissions differ by android version (bluetooth from 12 on and location before)
+                sdk = (await self.async_platform()).sdk
             await self.async_run_steps(steps.post_install_commands(sdk=sdk, disable_stock=disable_stock), progress)
         else:
             await self.async_run_steps(steps.restart_app_commands(), progress)
@@ -287,7 +290,8 @@ class AdbManager:
         """Grant the permissions the app needs (as after an install) and report what changed.
 
         The app reads some permissions only at start, so it is restarted when a runtime
-        permission or the location mode changed (and `restart` is set).
+        permission or the location mode changed (and `restart` is set). WRITE_SECURE_SETTINGS is
+        checked when it is used, so it needs no restart.
         """
 
         async def _run(device: AdbDeviceAsync) -> PermissionGrant:
@@ -305,7 +309,7 @@ class AdbManager:
             still_missing = after.missing(platform.sdk)
             granted = [name for name in before.missing(platform.sdk) if name not in still_missing]
             restarted = False
-            if granted and restart:
+            if restart and any(name != steps.SECURE_SETTINGS_NAME for name in granted):
                 await self._run_steps(device, steps.restart_app_commands())
                 restarted = True
             return PermissionGrant(
@@ -314,6 +318,20 @@ class AdbManager:
                 failed=[step_id for step_id, _ in commands if step_id not in done],
                 restarted=restarted,
             )
+
+        return await self.async_session(_run, auth_timeout=auth_timeout)
+
+    async def async_missing_permissions(self, *, auth_timeout: float = 5) -> list[str]:
+        """Read-only: what async_grant_permissions would grant (short names and `location_mode`)."""
+
+        async def _run(device: AdbDeviceAsync) -> list[str]:
+            platform = steps.parse_platform(
+                await device.shell(steps.PLATFORM_CHECK, transport_timeout_s=30, read_timeout_s=30)
+            )
+            state = steps.parse_permission_check(
+                await device.shell(steps.PERMISSION_CHECK, transport_timeout_s=30, read_timeout_s=30)
+            )
+            return state.missing(platform.sdk)
 
         return await self.async_session(_run, auth_timeout=auth_timeout)
 

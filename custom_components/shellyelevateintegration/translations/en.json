@@ -11,6 +11,9 @@
         "description": "Enter the 6-digit code that is now shown on the display.",
         "data": {
           "code": "Pairing code"
+        },
+        "data_description": {
+          "code": "The 6-digit code shown on the display. A new code is shown when it expires."
         }
       },
       "legacy_confirm": {
@@ -22,6 +25,9 @@
         "description": "Apply one of your settings profiles to the new display. The default profile is pre-selected.",
         "data": {
           "profile": "Profile"
+        },
+        "data_description": {
+          "profile": "Settings profile written to the new display. Choose — to keep its current settings."
         }
       },
       "reauth_confirm": {
@@ -33,6 +39,10 @@
         "data": {
           "host": "Host",
           "port": "Port"
+        },
+        "data_description": {
+          "host": "New IP address or hostname of the display.",
+          "port": "Port of the ShellyElevate API (default 8443)."
         }
       },
       "upgrade_confirm": {
@@ -104,7 +114,9 @@
           "adb": "Lets Home Assistant install and update the app, take screenshots and rescue the display over ADB. ADB over Wi-Fi must stay enabled on the display.",
           "watchdog": "Requires “Use ADB”.",
           "thermostat": "Creates a thermostat entity that switches a relay of the display based on the temperature.",
-          "backup_keep": "Older automatic backups are removed first; named backups are kept longest."
+          "backup_keep": "Older automatic backups are removed first; named backups are kept longest.",
+          "relays_as_lights": "Creates the relays as light entities instead of switches.",
+          "update_channel": "Beta also offers pre-releases of the ShellyElevate app."
         }
       },
       "thermostat": {
@@ -123,7 +135,10 @@
           "thermostat_relay": "Relay that switches the heater or cooler.",
           "thermostat_sensor": "Leave empty to use the display's own sensor.",
           "thermostat_tolerance": "The relay switches at target temperature ± tolerance.",
-          "thermostat_min_cycle": "Minimum time between two switching operations (0 = off)."
+          "thermostat_min_cycle": "Minimum time between two switching operations (0 = off).",
+          "thermostat_mode": "Heat switches the relay on below the target temperature, cool switches it on above it.",
+          "thermostat_min_temp": "Lowest target temperature that can be set.",
+          "thermostat_max_temp": "Highest target temperature that can be set."
         }
       }
     },
@@ -131,6 +146,9 @@
       "invalid_temp_range": "The minimum temperature must be lower than the maximum.",
       "no_relays": "This display has no relay to switch, so it cannot be a thermostat.",
       "sensor_required": "This display has no temperature sensor. Choose a temperature sensor."
+    },
+    "abort": {
+      "panel_entry": "The panel has no options."
     }
   },
   "selector": {
@@ -207,11 +225,11 @@
         "step": {
           "permissions": {
             "title": "Grant permissions on {name}",
-            "description": "The display reports: {problems}. Home Assistant grants the missing permissions over ADB (microphone, location and Bluetooth as needed, and location turned on for Bluetooth scans) and restarts the app if anything changed."
+            "description": "Missing: {problems}. Home Assistant grants the missing permissions over ADB (microphone, location and Bluetooth as needed, the permission the ADB over Wi‑Fi switch of the app needs, and location turned on for Bluetooth scans) and restarts the app if anything changed."
           },
           "enable_adb": {
             "title": "Enable ADB on {name}",
-            "description": "The display reports: {problems}. These permissions can only be granted over ADB, which is not enabled for this display.\n\n1. On the display, turn on **ADB over Wi‑Fi** in the ShellyElevate settings, or enable **ADB debugging** and **ADB over Wi‑Fi** (port 5555) in the Android developer options. On newer Shelly firmware, also turn on **ADB - WiFi** in the Shelly developer settings.\n2. Submit to connect to {host}:5555. If the display asks whether to allow debugging, allow it and choose to always allow this computer.\n\nHome Assistant then grants the permissions and turns on **Use ADB** in the integration options."
+            "description": "Missing: {problems}. These permissions can only be granted over ADB, which is not enabled for this display.\n\n1. On the display, turn on **ADB over Wi‑Fi** in the ShellyElevate settings, or enable **ADB debugging** and **ADB over Wi‑Fi** (port 5555) in the Android developer options. On newer Shelly firmware, also turn on **ADB - WiFi** in the Shelly developer settings.\n2. Submit to connect to {host}:5555. If the display asks whether to allow debugging, allow it and choose to always allow this computer.\n\nHome Assistant then grants the permissions and turns on **Use ADB** in the integration options."
           }
         },
         "abort": {
@@ -596,6 +614,12 @@
     },
     "apk_signature_mismatch": {
       "message": "The installed ShellyElevate was signed with a different key (an older build). Revert the display first (this removes the old app), then install again."
+    },
+    "setup_failed": {
+      "message": "Setting up the display at {host} failed: {error}"
+    },
+    "apk_too_large": {
+      "message": "The app download is larger than allowed."
     }
   },
   "services": {

@@ -32,8 +32,15 @@ WIKI_LAUNCHER_PACKAGE = "l.l"
 """Ultra Small Launcher, which the wiki's manual setup installs as a home app."""
 CACHE_FILES = ("/cache/update.zip", "/cache/update.zip.part", "/cache/.shellyelevate_probe", "/cache/recovery/command")
 
+ANDROID_9 = 28
 ANDROID_11 = 30
 ANDROID_12 = 31
+
+SECURE_SETTINGS = "android.permission.WRITE_SECURE_SETTINGS"
+SECURE_SETTINGS_NAME = SECURE_SETTINGS.rsplit(".", 1)[-1]
+
+_STOCK_LINE = "'^package:" + STOCK_PACKAGE.replace(".", "\\.") + "$'"
+"""grep pattern for exactly the stock package in `pm list packages` (no longer name matches)."""
 
 # Prints "uid=0(root)..." when `su` works for the shell user (rooted displays).
 ROOT_CHECK = "su -c id 2>/dev/null || id"
@@ -132,7 +139,7 @@ def adb_setup_commands(adb_public_key: str | None, *, root: bool) -> list[tuple[
 BASELINE_COMMAND = (
     "echo screen_brightness_mode=$(settings get system screen_brightness_mode);"
     " echo screen_brightness=$(settings get system screen_brightness);"
-    f" echo stock_disabled=$(pm list packages -d {STOCK_PACKAGE} | grep -c {STOCK_PACKAGE});"
+    f" echo stock_disabled=$(pm list packages -d {STOCK_PACKAGE} | grep -c {_STOCK_LINE});"
     " echo home=$(cmd package resolve-activity --brief -a android.intent.action.MAIN"
     " -c android.intent.category.HOME 2>/dev/null | tail -n 1)"
 )
@@ -184,6 +191,25 @@ def needs_location_mode(sdk: int | None) -> bool:
     return sdk is None or sdk < ANDROID_12
 
 
+_LOCATION_PROVIDERS_ON = (
+    "settings put secure location_providers_allowed +gps; settings put secure location_providers_allowed +network"
+)
+_LOCATION_MODE_ON = "settings put secure location_mode 3"
+
+
+def location_on_command(sdk: int | None) -> str:
+    """Turn location on.
+
+    Before Android 9 the location mode is only derived from the allowed providers, so writing
+    `location_mode` there changes nothing; from Android 9 on `location_mode` is the switch.
+    """
+    if sdk is None:
+        return f"{_LOCATION_PROVIDERS_ON}; {_LOCATION_MODE_ON}"
+    if sdk < ANDROID_9:
+        return _LOCATION_PROVIDERS_ON
+    return _LOCATION_MODE_ON
+
+
 def permission_commands(*, sdk: int | None = None) -> list[tuple[str, str]]:
     """Grant the runtime permissions and app ops, turn location on and exempt the app from doze.
 
@@ -193,22 +219,30 @@ def permission_commands(*, sdk: int | None = None) -> list[tuple[str, str]]:
     pkg = APP_PACKAGE
     steps = [(step_id, f"pm grant {pkg} {perm}") for step_id, perm in runtime_permissions(sdk)]
     if needs_location_mode(sdk):
-        steps.append(("location_on", "settings put secure location_mode 3"))
+        steps.append(("location_on", location_on_command(sdk)))
     steps += [
         ("write_settings", f"appops set {pkg} WRITE_SETTINGS allow"),
         ("overlay", f"appops set {pkg} SYSTEM_ALERT_WINDOW allow"),
         # the app display module reads the app in front from usage stats
         ("usage_stats", f"appops set {pkg} GET_USAGE_STATS allow"),
         ("doze_whitelist", f"dumpsys deviceidle whitelist +{pkg}"),
+        # lets the ADB over Wi-Fi switch of the app restart adbd; versions that do not request it are skipped
+        (
+            "secure_settings",
+            f"dumpsys package {pkg} | grep -q {SECURE_SETTINGS} && pm grant {pkg} {SECURE_SETTINGS}; true",
+        ),
     ]
     return steps
 
 
 PERMISSION_CHECK = (
     f"dumpsys package {APP_PACKAGE} | grep -E 'android.permission.[A-Z_]+: granted=true';"
-    " echo location_mode=$(settings get secure location_mode)"
+    " echo location_mode=$(settings get secure location_mode);"
+    " echo location_providers=$(settings get secure location_providers_allowed);"
+    f" echo secure_requested=$(dumpsys package {APP_PACKAGE} | grep -c {SECURE_SETTINGS})"
 )
-"""Read-only: the granted permissions of the app and the location mode."""
+"""Read-only: the granted permissions of the app, the location mode and providers, and whether
+the app requests WRITE_SECURE_SETTINGS (versions with the ADB over Wi-Fi switch do)."""
 
 _GRANTED = re.compile(r"android\.permission\.([A-Z_]+): granted=true")
 
@@ -220,39 +254,93 @@ class PermissionState:
     granted: frozenset[str]
     location_on: bool | None
     """None when the location mode could not be read."""
+    providers_on: bool | None = None
+    """Whether a location provider is allowed (what counts before Android 9), None when not read."""
+    secure_settings_requested: bool = False
+    """The app requests WRITE_SECURE_SETTINGS, which only ADB can grant."""
 
     def missing(self, sdk: int | None) -> list[str]:
-        """Runtime permissions (short names) and `location_mode` that are still missing."""
+        """Permissions (short names) and `location_mode` that are still missing."""
         missing = [perm.rsplit(".", 1)[-1] for _, perm in runtime_permissions(sdk)]
         missing = [name for name in missing if name not in self.granted]
-        if needs_location_mode(sdk) and self.location_on is False:
-            missing.append("location_mode")
+        if needs_location_mode(sdk):
+            location_on = self.location_on
+            if sdk is not None and sdk < ANDROID_9 and self.providers_on is not None:
+                location_on = self.providers_on
+            if location_on is False:
+                missing.append("location_mode")
+        if self.secure_settings_requested and SECURE_SETTINGS_NAME not in self.granted:
+            missing.append(SECURE_SETTINGS_NAME)
         return missing
 
 
 def parse_permission_check(output: str) -> PermissionState:
     """Parse the PERMISSION_CHECK output."""
-    mode = parse_baseline(output).get("location_mode", "")
+    values = parse_baseline(output)
+    mode = values.get("location_mode", "")
+    providers: bool | None = None
+    for line in output.splitlines():
+        key, sep, value = line.partition("=")
+        if sep and key.strip() == "location_providers":
+            # empty or null means no provider is allowed
+            providers = value.strip() not in ("", "null")
+    requested = values.get("secure_requested", "0")
     return PermissionState(
         granted=frozenset(_GRANTED.findall(output)),
         location_on=int(mode) != 0 if mode.isdigit() else None,
+        providers_on=providers,
+        secure_settings_requested=requested.isdigit() and int(requested) > 0,
     )
+
+
+_STOCK_OVERLAY_DENY = f"appops set {STOCK_PACKAGE} SYSTEM_ALERT_WINDOW deny && am force-stop {STOCK_PACKAGE}"
+
+DISABLE_STOCK_OVERLAY_COMMAND = (
+    f"{_STOCK_OVERLAY_DENY} && echo 'Stock app kept from drawing on top and stopped'"
+    " || echo 'Error: the stock app could not be kept from drawing on top'"
+)
+"""Keep the stock app from drawing on top and stop it (Android 11 and later).
+
+The stock app stays enabled and stays the home app.
+"""
+
+DISABLE_STOCK_COMMAND = (
+    f"pm disable-user --user 0 {STOCK_PACKAGE} >/dev/null 2>&1;"
+    f" if pm list packages -d {STOCK_PACKAGE} | grep -q {_STOCK_LINE}; then echo 'Stock app disabled';"
+    f" else {_STOCK_OVERLAY_DENY}"
+    " && echo 'Stock app cannot be disabled here; it may no longer draw on top and was stopped'"
+    " || echo 'Error: the stock app could neither be disabled nor kept from drawing on top'; fi"
+)
+"""Disable the stock app, or keep it from drawing on top where it cannot be disabled (before Android 11).
+
+`pm disable-user` works for the shell user (plain `pm disable` needs root) and `pm enable` undoes
+it without root. The output says which of the two applied; `revert_commands` undoes both.
+"""
+
+
+def disable_stock_command(sdk: int | None) -> str:
+    """The command that keeps the stock app from covering ShellyElevate on this Android version.
+
+    From Android 11 on (XL, X2i, X1i) the stock app is only kept from drawing on top: disabling it
+    could leave these models without a home app. Older models try `pm disable-user` first. An
+    unknown version takes the safe way.
+    """
+    if sdk is not None and sdk < ANDROID_11:
+        return DISABLE_STOCK_COMMAND
+    return DISABLE_STOCK_OVERLAY_COMMAND
 
 
 def post_install_commands(*, sdk: int | None = None, disable_stock: bool = False) -> list[tuple[str, str]]:
     """ADB shell commands run after installing the app. Failures are not fatal.
 
-    `disable_stock` keeps the stock app from covering ShellyElevate. Android 11 models protect
-    the stock package (and it is the only home app), so it is only kept from drawing on top and
-    stopped there; older ones disable it, which leaves no home app.
+    `disable_stock` keeps the stock app from covering ShellyElevate (see disable_stock_command).
+    ShellyElevate is no home app (its lite mode keeps the stock UI): it starts on boot and brings
+    itself back whenever the home app is in front, so a disabled stock app leaves the display
+    without a home app and an enabled one stays the home app.
     """
     steps = permission_commands(sdk=sdk)
     if disable_stock:
-        if sdk is not None and sdk >= ANDROID_11:
-            command = f"appops set {STOCK_PACKAGE} SYSTEM_ALERT_WINDOW deny; am force-stop {STOCK_PACKAGE}"
-        else:
-            command = f"pm disable-user --user 0 {STOCK_PACKAGE}"
-        steps.append(("disable_stock", command))
+        steps.append(("disable_stock", disable_stock_command(sdk)))
     steps.append(("start", f"am start -n {APP_ACTIVITY}"))
     return steps
 
@@ -288,7 +376,7 @@ REVERT_CHECK = (
     f" echo priv_app=$(ls -d {PRIV_APP_DIR} 2>/dev/null);"
     f" echo init_rc=$(ls {INIT_RC} 2>/dev/null);"
     f" echo stock=$(pm path {STOCK_PACKAGE} | head -n 1);"
-    f" echo stock_disabled=$(pm list packages -d {STOCK_PACKAGE} | grep -c {STOCK_PACKAGE});"
+    f" echo stock_disabled=$(pm list packages -d {STOCK_PACKAGE} | grep -c {_STOCK_LINE});"
     f" echo stock_state=$(dumpsys package {STOCK_PACKAGE} | grep -oE 'enabled=[0-9]' | head -n 1);"
     " echo stock_home=$(cmd package query-activities --brief -a android.intent.action.MAIN"
     f" -c android.intent.category.HOME 2>/dev/null | grep -m 1 {STOCK_PACKAGE}/);"

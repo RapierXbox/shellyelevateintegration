@@ -9,18 +9,24 @@ Which entities exist depends only on values that the user switches on purpose:
 
 * the capabilities of the display (`requires` of the schema and the capabilities themselves),
 * `hidden` of the schema,
-* `visible_if` conditions on the feature toggles in FEATURE_KEYS.
+* `visible_if` conditions on the feature toggles in FEATURE_KEYS: media, voice, the Bluetooth proxy,
+  MQTT and the display module.
 
 A `visible_if` condition on any other setting does not decide whether an entity exists, only whether
-it is available (see ShellyElevateIntegrationEntity.available). Commands change some settings as a
-side effect: `screen.set` writes `automaticBrightness` and `brightness`, `voice.set_config` writes
-`voiceWakeEnabled` and `voiceWakeModelName`, `night_mode.set` writes `nightModeEnabled`, the
-microphone button writes `voiceAssistantMuted` and the dashboard can write `screenSaverId`. If those
+it is available (see ShellyElevateIntegrationEntity.available). So turning off the screensaver,
+proximity wake, the button relays or swipe events makes their entities unavailable without a reload.
+Commands also change some settings as a side effect: `screen.set` writes `automaticBrightness` and
+`brightness`, `voice.set_config` writes `voiceWakeEnabled` and `voiceWakeModelName`, `night_mode.set`
+writes `nightModeEnabled`, the microphone button writes `voiceAssistantMuted` and the dashboard can
+write `screenSaverId`. If those
 added or removed entities, setting the screen brightness would reload the entry, which drops the
 connection, ends voice sessions and deletes entities that automations use.
 
 State keys never decide it either: a v1 display reports the keys of protocol v1 (a missing value is
 unknown, not a missing entity), so one snapshot without a key cannot remove an entity.
+
+Registry entries are only removed with the display's own schema: the built-in fallback rules may be
+older than the app, so an entity they leave out is kept until the schema can be read.
 """
 
 from __future__ import annotations
@@ -47,22 +53,17 @@ _LOGGER = logging.getLogger(__name__)
 RELOAD_COOLDOWN = 2
 """Seconds a burst of setting changes is collected before the entities are compared."""
 
+SCHEMA_LOADED: Final = "_schema_loaded"
+"""Message type the device sends when it read the settings schema of the display."""
+
 FEATURE_KEYS: Final = frozenset(
     {
         # protocol v1
-        "integrationApiEnabled",
         "displayModule",
-        "appSwitcherGesture",
-        "screenSaver",
-        "wakeOnProximity",
         "mediaEnabled",
         "haVoiceEnabled",
         "bleScannerEnabled",
         "mqttEnabled",
-        "buttonRelayEnabled",
-        "dynamicTempOffsetEnabled",
-        "publishSwipeEvents",
-        *(f"swInputMode{index}" for index in range(4)),
         # legacy app
         "liteMode",
         "voiceAssistantEnabled",
@@ -71,8 +72,9 @@ FEATURE_KEYS: Final = frozenset(
 )
 """Feature toggles: `visible_if` conditions on these decide which entities exist.
 
-Only settings the user switches on purpose belong here, never one that a command writes as a side
-effect (see the module docstring).
+Only features whose entities make no sense while they are off belong here, never a setting that a
+command writes as a side effect (see the module docstring). Any other condition makes an entity
+unavailable instead.
 """
 
 SETUP_CAPS: Final = (
@@ -142,6 +144,10 @@ class FeatureWatcher:
         self._setup_caps = setup_capabilities(device)
         self._ready = False
         self._reload_scheduled = False
+        # a skipped check runs again once it can
+        self._dirty = False
+        # stale registry entries were kept because the schema was missing
+        self._removal_pending = False
         self._unsubs: list[Callable[[], None]] = []
         self._debouncer = Debouncer(
             hass, _LOGGER, cooldown=RELOAD_COOLDOWN, immediate=False, function=self._async_check
@@ -151,7 +157,10 @@ class FeatureWatcher:
         """Remember the entities the platforms are about to create and listen for setting changes."""
         integration = await async_get_integration(self.hass, DOMAIN)
         await integration.async_get_platforms([platform.value for platform in self._platforms])
-        self._unsubs.append(self.device.async_add_message_listener(self._on_message))
+        self._unsubs += [
+            self.device.async_add_message_listener(self._on_message),
+            self.device.async_add_availability_listener(self._on_availability),
+        ]
         self._expected = expected_entities(self.device, self._platforms)
 
     @callback
@@ -175,21 +184,49 @@ class FeatureWatcher:
             # a setting changed while the platforms were set up so they may have used either value
             self._debouncer.async_schedule_call()
             return
+        if not self._has_schema():
+            # the fallback rules may miss entities of a newer app so nothing is removed yet
+            self._removal_pending = True
+            self._dirty = True
+            return
         self._async_remove_stale(expected)
 
     # ---------------------------------------------------------------- triggers
 
     @callback
     def _on_message(self, message: dict[str, object]) -> None:
+        if not self._ready:
+            return
         # a reconnect reads the settings again and reports the changed ones like this
-        if message.get("type") in ("settings_changed", "_info_changed") and self._ready:
+        if message.get("type") in ("settings_changed", "_info_changed") or (
+            message.get("type") == SCHEMA_LOADED and self._dirty
+        ):
             self._debouncer.async_schedule_call()
+
+    @callback
+    def _on_availability(self) -> None:
+        # a check skipped while the display was away runs now
+        if self._ready and self._dirty and self.device.available:
+            self._debouncer.async_schedule_call()
+
+    def _has_schema(self) -> bool:
+        """Whether the rules come from the display itself and not from the built-in fallback."""
+        return self.device.legacy or bool(self.device.schema)
 
     async def _async_check(self) -> None:
         entry = self.device.entry
-        if self._reload_scheduled or entry.state is not ConfigEntryState.LOADED or entry.setup_lock.locked():
+        if self._reload_scheduled:
+            return
+        self._dirty = False
+        if entry.state is not ConfigEntryState.LOADED or entry.setup_lock.locked():
+            self._dirty = True
+            if entry.state in (ConfigEntryState.LOADED, ConfigEntryState.SETUP_IN_PROGRESS):
+                # setup still holds the entry so look again after the cooldown
+                self._debouncer.async_schedule_call()
             return
         if not self.device.available:
+            # runs again when the display is back
+            self._dirty = True
             return
         if (caps := setup_capabilities(self.device)) != self._setup_caps:
             changed = sorted(name for name in SETUP_CAPS if caps[name] != self._setup_caps[name])
@@ -197,11 +234,17 @@ class FeatureWatcher:
             self._async_reload()
             return
         if not await self.device.async_get_schema() and not self.device.legacy:
-            # without the schema the rules are not known for sure
+            # without the schema the rules are not known for sure so wait for it
+            self._dirty = True
             return
         self._async_set_bluetooth(self.device.bluetooth_active)
         expected = expected_entities(self.device, self._platforms)
-        if expected is None or expected == self._expected:
+        if expected is None:
+            return
+        if expected == self._expected:
+            if self._removal_pending:
+                self._removal_pending = False
+                self._async_remove_stale(expected)
             return
         added = sorted(f"{domain}.{uid}" for domain, uid in expected - (self._expected or set()))
         removed = sorted(f"{domain}.{uid}" for domain, uid in (self._expected or set()) - expected)
@@ -236,13 +279,22 @@ class FeatureWatcher:
                 continue
             if er.async_entries_for_device(registry, device_entry.id, include_disabled_entities=True):
                 continue
-            devices.async_update_device(device_entry.id, remove_config_entry_id=entry_id)
+            if hasattr(devices, "async_get_device_by_identifier"):
+                # ha 2026.10 and newer: a device belongs to one entry only
+                devices.async_remove_device(device_entry.id)
+            else:
+                devices.async_update_device(device_entry.id, remove_config_entry_id=entry_id)
 
     @callback
     def _async_set_bluetooth(self, on: bool) -> None:
         """Register or unregister the display as a remote Bluetooth scanner."""
         if on and self._bluetooth_unload is None and self._bluetooth_setup is not None:
-            self._bluetooth_unload = self._bluetooth_setup(self.hass, self.device)
+            try:
+                self._bluetooth_unload = self._bluetooth_setup(self.hass, self.device)
+            except Exception:
+                # the display keeps working without the proxy
+                _LOGGER.exception("Could not register %s as a Bluetooth scanner", self.device.entry.title)
+                return
             _LOGGER.debug("%s is a Bluetooth scanner now", self.device.entry.title)
         elif not on and self._bluetooth_unload is not None:
             self._bluetooth_unload()

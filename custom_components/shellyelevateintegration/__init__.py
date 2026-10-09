@@ -121,7 +121,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShellyElevateIntegration
         ) from err
     except ShellyElevateIntegrationError as err:
         await client.disconnect()
-        raise ConfigEntryNotReady(str(err)) from err
+        raise ConfigEntryNotReady(
+            translation_domain=DOMAIN,
+            translation_key="setup_failed",
+            translation_placeholders={"host": entry.data[CONF_HOST], "error": str(err)},
+        ) from err
 
     if not client.legacy and client.info is not None and entry.unique_id and client.info.device_id != entry.unique_id:
         # the app keeps its id for good so a different id is a different display
@@ -166,12 +170,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShellyElevateIntegration
 
         bluetooth_setup = None
         if device.info.capabilities.bluetooth and not device.legacy:
-            if "bluetooth" in hass.config.components:
-                from .bluetooth import async_setup_bluetooth
+            # bluetooth is a dependency so it is loaded here
+            from .bluetooth import async_setup_bluetooth
 
-                bluetooth_setup = async_setup_bluetooth
-            else:
-                _LOGGER.info("Not using %s as a Bluetooth proxy: the Bluetooth integration is not loaded", entry.title)
+            bluetooth_setup = async_setup_bluetooth
 
         # entities only exist while their feature is on: a change reloads the entry
         watcher = FeatureWatcher(hass, device, _platforms(device), bluetooth_setup)
@@ -212,25 +214,30 @@ async def _async_auto_enable_features(hass: HomeAssistant, device: ShellyElevate
 
     They are off on the display by default but only work through this integration. Each one is
     handled once per entry so a feature the user turns off later stays off: a key that an older app
-    does not know yet stays pending until the app has it. Returns the keys turned on now.
+    does not know yet stays pending until the app has it. A key a profile or the installer set when
+    the display was added is handled already, and only a key still at the app default is changed.
+    Returns the keys turned on now.
     """
     entry = device.entry
     caps = device.info.capabilities
     wanted = {
         "mediaEnabled": caps.speaker,
-        "bleScannerEnabled": caps.bluetooth and "bluetooth" in hass.config.components,
+        "bleScannerEnabled": caps.bluetooth,
         "haVoiceEnabled": device.voice_enabled,
     }
     handled = set(entry.data.get(CONF_FEATURES_AUTO_HANDLED) or ())
     known = await device.async_known_keys()
+    evaluator = device.visibility()
     changes: dict[str, bool] = {}
     for key, want in wanted.items():
         if key in handled or (want and key not in known):
             continue
-        if want and device.settings.get(key) is False:
+        definition = evaluator.definition(key)
+        default = False if definition is None else definition.default
+        if want and device.settings.get(key) is False and default is False:
             changes[key] = True
         else:
-            # nothing to do on this display or already on
+            # nothing to do on this display or already on or not at the default
             handled.add(key)
     turned_on: set[str] = set()
     if changes:

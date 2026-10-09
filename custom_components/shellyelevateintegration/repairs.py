@@ -207,6 +207,7 @@ class SettingsFixFlow(RepairsFlow):
                     if device.adb is None:
                         return self.async_abort(reason="no_adb")
                     if user_input.get("reinstall"):
+                        # reads the android version itself for the permission steps
                         await device.adb.async_install_app(
                             channel=entry.options.get(OPT_UPDATE_CHANNEL, UPDATE_CHANNEL_STABLE)
                         )
@@ -226,7 +227,10 @@ class SettingsFixFlow(RepairsFlow):
 def _permission_placeholders(device: ShellyElevateIntegrationDevice) -> dict[str, str]:
     from .permissions import permission_problems
 
-    return {"name": device.entry.title, "problems": ", ".join(permission_problems(device.state)) or "-"}
+    # the guard also knows what only the adb check finds
+    guard = device.permissions
+    problems = guard.problems() if guard is not None else permission_problems(device.state)
+    return {"name": device.entry.title, "problems": ", ".join(problems) or "-"}
 
 
 async def async_create_fix_flow(

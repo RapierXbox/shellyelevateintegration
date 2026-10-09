@@ -11,6 +11,9 @@
         "description": "Gib den 6-stelligen Code ein, der jetzt auf dem Display angezeigt wird.",
         "data": {
           "code": "Kopplungscode"
+        },
+        "data_description": {
+          "code": "Der 6-stellige Code auf dem Display. Läuft er ab, wird ein neuer angezeigt."
         }
       },
       "legacy_confirm": {
@@ -22,6 +25,9 @@
         "description": "Wende eines deiner Einstellungsprofile auf das neue Display an. Das Standardprofil ist vorausgewählt.",
         "data": {
           "profile": "Profil"
+        },
+        "data_description": {
+          "profile": "Einstellungsprofil, das auf das neue Display geschrieben wird. Wähle —, um die aktuellen Einstellungen zu behalten."
         }
       },
       "reauth_confirm": {
@@ -33,6 +39,10 @@
         "data": {
           "host": "Host",
           "port": "Port"
+        },
+        "data_description": {
+          "host": "Neue IP-Adresse oder neuer Hostname des Displays.",
+          "port": "Port der ShellyElevate-API (Standard 8443)."
         }
       },
       "upgrade_confirm": {
@@ -104,7 +114,9 @@
           "adb": "Ermöglicht Home Assistant, die App per ADB zu installieren und zu aktualisieren, Screenshots zu erstellen und das Display zu retten. ADB über WLAN muss auf dem Display aktiviert bleiben.",
           "watchdog": "Erfordert „ADB verwenden“.",
           "thermostat": "Erstellt eine Thermostat-Entität, die ein Relais des Displays nach der Temperatur schaltet.",
-          "backup_keep": "Ältere automatische Sicherungen werden zuerst entfernt; benannte Sicherungen werden am längsten aufbewahrt."
+          "backup_keep": "Ältere automatische Sicherungen werden zuerst entfernt; benannte Sicherungen werden am längsten aufbewahrt.",
+          "relays_as_lights": "Erstellt die Relais als Licht-Entitäten statt als Schalter.",
+          "update_channel": "Beta bietet auch Vorabversionen der ShellyElevate-App an."
         }
       },
       "thermostat": {
@@ -123,7 +135,10 @@
           "thermostat_relay": "Relais, das Heizung oder Kühlung schaltet.",
           "thermostat_sensor": "Leer lassen, um den Sensor des Displays zu verwenden.",
           "thermostat_tolerance": "Das Relais schaltet bei Zieltemperatur ± Toleranz.",
-          "thermostat_min_cycle": "Mindestzeit zwischen zwei Schaltvorgängen (0 = aus)."
+          "thermostat_min_cycle": "Mindestzeit zwischen zwei Schaltvorgängen (0 = aus).",
+          "thermostat_mode": "Heizen schaltet das Relais unter der Zieltemperatur ein, Kühlen über der Zieltemperatur.",
+          "thermostat_min_temp": "Niedrigste einstellbare Zieltemperatur.",
+          "thermostat_max_temp": "Höchste einstellbare Zieltemperatur."
         }
       }
     },
@@ -131,6 +146,9 @@
       "invalid_temp_range": "Die minimale Temperatur muss kleiner als die maximale sein.",
       "no_relays": "Dieses Display hat kein Relais zum Schalten und kann daher kein Thermostat sein.",
       "sensor_required": "Dieses Display hat keinen Temperatursensor. Wähle einen Temperatursensor aus."
+    },
+    "abort": {
+      "panel_entry": "Beim Panel gibt es nichts einzustellen."
     }
   },
   "selector": {
@@ -207,11 +225,11 @@
         "step": {
           "permissions": {
             "title": "Berechtigungen auf {name} erteilen",
-            "description": "Das Display meldet: {problems}. Home Assistant erteilt die fehlenden Berechtigungen über ADB (Mikrofon, Standort und Bluetooth nach Bedarf, dazu wird der Standort für Bluetooth-Scans eingeschaltet) und startet die App neu, wenn sich etwas geändert hat."
+            "description": "Es fehlt: {problems}. Home Assistant erteilt die fehlenden Berechtigungen über ADB (Mikrofon, Standort und Bluetooth nach Bedarf, die Berechtigung für den Schalter „ADB über WLAN“ der App, dazu wird der Standort für Bluetooth-Scans eingeschaltet) und startet die App neu, wenn sich etwas geändert hat."
           },
           "enable_adb": {
             "title": "ADB auf {name} aktivieren",
-            "description": "Das Display meldet: {problems}. Diese Berechtigungen können nur über ADB erteilt werden, und ADB ist für dieses Display nicht aktiviert.\n\n1. Schalte auf dem Display in den ShellyElevate-Einstellungen **ADB über WLAN** ein, oder aktiviere in den Android-Entwickleroptionen **ADB-Debugging** und **ADB über WLAN** (Port 5555). Bei neuerer Shelly-Firmware zusätzlich **ADB - WiFi** in den Shelly-Entwicklereinstellungen einschalten.\n2. Sende das Formular ab, um dich mit {host}:5555 zu verbinden. Fragt das Display, ob Debugging erlaubt werden soll, erlaube es und wähle, diesem Computer immer zu vertrauen.\n\nHome Assistant erteilt dann die Berechtigungen und aktiviert **ADB verwenden** in den Integrationsoptionen."
+            "description": "Es fehlt: {problems}. Diese Berechtigungen können nur über ADB erteilt werden, und ADB ist für dieses Display nicht aktiviert.\n\n1. Schalte auf dem Display in den ShellyElevate-Einstellungen **ADB über WLAN** ein, oder aktiviere in den Android-Entwickleroptionen **ADB-Debugging** und **ADB über WLAN** (Port 5555). Bei neuerer Shelly-Firmware zusätzlich **ADB - WiFi** in den Shelly-Entwicklereinstellungen einschalten.\n2. Sende das Formular ab, um dich mit {host}:5555 zu verbinden. Fragt das Display, ob Debugging erlaubt werden soll, erlaube es und wähle, diesem Computer immer zu vertrauen.\n\nHome Assistant erteilt dann die Berechtigungen und aktiviert **ADB verwenden** in den Integrationsoptionen."
           }
         },
         "abort": {
@@ -596,6 +614,12 @@
     },
     "apk_signature_mismatch": {
       "message": "Das installierte ShellyElevate wurde mit einem anderen Schlüssel signiert (ein älterer Build). Setze das Display zuerst zurück (das entfernt die alte App) und installiere dann erneut."
+    },
+    "setup_failed": {
+      "message": "Die Einrichtung des Displays unter {host} ist fehlgeschlagen: {error}"
+    },
+    "apk_too_large": {
+      "message": "Der Download der App ist größer als erlaubt."
     }
   },
   "services": {

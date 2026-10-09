@@ -25,7 +25,12 @@ CONF_FEATURES_AUTO_ENABLED: Final = "features_auto_enabled"
 Later user choices stand. Entries from before this flag existed are migrated to True.
 """
 CONF_FEATURES_AUTO_HANDLED: Final = "features_auto_handled"
-"""Feature keys already handled while CONF_FEATURES_AUTO_ENABLED is still False."""
+"""Feature keys already handled while CONF_FEATURES_AUTO_ENABLED is still False.
+
+A key a profile or the installer set when the display was added counts as handled from the start.
+"""
+AUTO_FEATURES: Final = frozenset({"mediaEnabled", "bleScannerEnabled", "haVoiceEnabled"})
+"""Settings turned on once on a newly added display (see CONF_FEATURES_AUTO_ENABLED)."""
 
 # Options
 OPT_RELAYS_AS_LIGHTS: Final = "relays_as_lights"

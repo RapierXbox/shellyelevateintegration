@@ -92,6 +92,12 @@
       },
       "sleep_optimization": {
         "default": "mdi:sleep"
+      },
+      "pipeline": {
+        "default": "mdi:account-voice"
+      },
+      "vad_sensitivity": {
+        "default": "mdi:ear-hearing"
       }
     },
     "sensor": {

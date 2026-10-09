@@ -18,7 +18,7 @@ ADDRESS_TYPES = {0: "public", 1: "random"}
 
 
 class ShellyElevateIntegrationBleScanner(BaseHaRemoteScanner):
-    """Passive remote scanner fed from WebSocket channel 0x02."""
+    """Remote scanner fed from WebSocket channel 0x02."""
 
     @callback
     def async_on_batch(self, payload: bytes) -> None:
@@ -44,8 +44,9 @@ def async_setup_bluetooth(hass: HomeAssistant, device: ShellyElevateIntegrationD
         device.entry.title,
         connector=None,
         connectable=False,
-        requested_mode=BluetoothScanningMode.PASSIVE,
-        current_mode=BluetoothScanningMode.PASSIVE,
+        # android scans actively and the app forwards the scan responses too
+        requested_mode=BluetoothScanningMode.ACTIVE,
+        current_mode=BluetoothScanningMode.ACTIVE,
     )
     unsubs: list[Callable[[], None]] = [
         scanner.async_setup(),
