@@ -53,6 +53,8 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[TextEntity]:
 class ShellyElevateIntegrationSettingText(ShellyElevateIntegrationEntity, TextEntity):
     """A string display setting."""
 
+    entity_description: ShellyElevateIntegrationTextDescription
+
     @property
     def native_value(self) -> str | None:
         """Current setting value."""

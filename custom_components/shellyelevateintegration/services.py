@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable, Coroutine, Iterable
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import ATTR_DEVICE_ID
@@ -12,15 +12,21 @@ from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, Supp
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.service import async_register_admin_service
-import voluptuous as vol
+from homeassistant.util.json import JsonValueType
 
 from .adb.apk import async_get_releases
 from .const import DOMAIN, OPT_UPDATE_CHANNEL, UPDATE_CHANNEL_STABLE
-from .device import ShellyElevateIntegrationDevice
+from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .revert import RevertOptions, async_revert
 from .settings import schema as schema_util
 from .settings.backups import REASON_BEFORE_PROFILE, BackupManager
 from .settings.profiles import async_get_profile_manager
+
+if TYPE_CHECKING:
+    # ha 2026.9+ aliases voluptuous to probatio at runtime
+    import probatio as vol
+else:
+    import voluptuous as vol
 
 ATTR_NAME = "name"
 ATTR_BACKUP_ID = "backup_id"
@@ -77,7 +83,7 @@ def _get_device(hass: HomeAssistant, device_id: str) -> ShellyElevateIntegration
         else list(getattr(device_entry, "config_entries", ()))
     )
     for entry_id in entry_ids:
-        entry = hass.config_entries.async_get_entry(entry_id)
+        entry: ShellyElevateIntegrationConfigEntry | None = hass.config_entries.async_get_entry(entry_id)
         if entry is not None and entry.domain == DOMAIN:
             if entry.state is not ConfigEntryState.LOADED:
                 raise HomeAssistantError(
@@ -93,6 +99,11 @@ def _get_device(hass: HomeAssistant, device_id: str) -> ShellyElevateIntegration
 
 def _devices(hass: HomeAssistant, call: ServiceCall) -> list[ShellyElevateIntegrationDevice]:
     return [_get_device(hass, device_id) for device_id in call.data[ATTR_DEVICE_ID]]
+
+
+def _json_list(items: Iterable[dict[str, Any]]) -> list[JsonValueType]:
+    """Settings dicts as a json list for an action response."""
+    return list(items)
 
 
 def _backups(device: ShellyElevateIntegrationDevice) -> BackupManager:
@@ -172,7 +183,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
     """Register actions."""
 
     async def backup(call: ServiceCall) -> ServiceResponse:
-        out = []
+        out: list[JsonValueType] = []
         for device in _devices(hass, call):
             item = await _backups(device).async_backup(call.data.get(ATTR_NAME))
             out.append({"device_id": device.device_entry_id, "backup_id": item["id"], "created": item["created"]})
@@ -181,12 +192,14 @@ def async_setup_services(hass: HomeAssistant) -> None:
     async def restore(call: ServiceCall) -> ServiceResponse:
         device = _get_device(hass, call.data[ATTR_DEVICE_ID])
         changes = await _backups(device).async_restore(call.data.get(ATTR_BACKUP_ID), call.data.get(ATTR_KEYS))
-        return {"changes": changes}
+        return {"changes": _json_list(changes)}
 
     async def apply_profile(call: ServiceCall) -> ServiceResponse:
         return {
             "results": {
-                device.device_entry_id: await async_apply_profile(hass, device, call.data[ATTR_PROFILE])
+                device.device_entry_id or device.device_id: _json_list(
+                    await async_apply_profile(hass, device, call.data[ATTR_PROFILE])
+                )
                 for device in _devices(hass, call)
             }
         }
@@ -233,7 +246,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
         changes: list[dict[str, Any]] = []
         if call.data[ATTR_APPLY]:
             changes = await backups.async_restore(backup["id"])
-        return {"backup_id": backup["id"], "changes": changes}
+        return {"backup_id": backup["id"], "changes": _json_list(changes)}
 
     async def get_settings(call: ServiceCall) -> ServiceResponse:
         device = _get_device(hass, call.data[ATTR_DEVICE_ID])
@@ -298,7 +311,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     def register_admin(
         service: str,
-        handler: Callable[[ServiceCall], Awaitable[ServiceResponse | None]],
+        handler: Callable[[ServiceCall], Coroutine[Any, Any, ServiceResponse]],
         schema: vol.Schema,
         supports_response: SupportsResponse = SupportsResponse.NONE,
     ) -> None:

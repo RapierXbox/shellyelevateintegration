@@ -5,14 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from homeassistant.components.light import (
-    ATTR_BRIGHTNESS,
-    ATTR_EFFECT,
-    ColorMode,
-    LightEntity,
-    LightEntityDescription,
-    LightEntityFeature,
-)
+from homeassistant.components.light import LightEntity, LightEntityDescription
+from homeassistant.components.light.const import ATTR_BRIGHTNESS, ATTR_EFFECT, ColorMode, LightEntityFeature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -57,6 +51,8 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[LightEntity]
 class ShellyElevateIntegrationScreenLight(ShellyElevateIntegrationEntity, LightEntity):
     """The display backlight: on = awake, off = screensaver/sleep."""
 
+    entity_description: ShellyElevateIntegrationLightDescription
+
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
     _attr_color_mode = ColorMode.BRIGHTNESS
     _attr_supported_features = LightEntityFeature.EFFECT
@@ -76,7 +72,8 @@ class ShellyElevateIntegrationScreenLight(ShellyElevateIntegrationEntity, LightE
     @property
     def is_on(self) -> bool | None:
         """Whether the screen is awake."""
-        return self.device.state.get("screen.on", True)
+        awake: bool | None = self.device.state.get("screen.on", True)
+        return awake
 
     @property
     def brightness(self) -> int | None:
@@ -112,6 +109,8 @@ class ShellyElevateIntegrationScreenLight(ShellyElevateIntegrationEntity, LightE
 
 class ShellyElevateIntegrationDimmerLight(ShellyElevateIntegrationEntity, LightEntity):
     """Shelly dimmer backplate."""
+
+    entity_description: ShellyElevateIntegrationLightDescription
 
     _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
     _attr_color_mode = ColorMode.BRIGHTNESS
@@ -152,6 +151,8 @@ class ShellyElevateIntegrationDimmerLight(ShellyElevateIntegrationEntity, LightE
 
 class ShellyElevateIntegrationRelayLight(ShellyElevateIntegrationRelayEntity, LightEntity):
     """A relay exposed as an on/off light ("relays as lights" option)."""
+
+    entity_description: ShellyElevateIntegrationLightDescription
 
     _attr_supported_color_modes = {ColorMode.ONOFF}
     _attr_color_mode = ColorMode.ONOFF

@@ -13,7 +13,7 @@ import contextlib
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, overload
 
 import aiohttp
 
@@ -391,6 +391,10 @@ class LegacyClient(ShellyElevateIntegrationApi):
         self._emit({"type": "media_status", "status": {**self.media.as_dict(), **changes}})
 
 
+@overload
+def _int(value: Any) -> int | None: ...
+@overload
+def _int(value: Any, default: int) -> int: ...
 def _int(value: Any, default: int | None = None) -> int | None:
     try:
         return int(value)

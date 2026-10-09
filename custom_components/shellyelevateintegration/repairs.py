@@ -9,12 +9,16 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
-import voluptuous as vol
 
 from .const import DOMAIN, OPT_ADB, OPT_UPDATE_CHANNEL, UPDATE_CHANNEL_STABLE
 
 if TYPE_CHECKING:
-    from .device import ShellyElevateIntegrationDevice
+    # ha 2026.9+ aliases voluptuous to probatio at runtime
+    import probatio as vol
+
+    from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
+else:
+    import voluptuous as vol
 
 ISSUE_LEGACY_APP = "legacy_app"
 ISSUE_DUPLICATES = "duplicate_devices"
@@ -129,7 +133,7 @@ class SettingsFixFlow(RepairsFlow):
         return await self.async_step_confirm()
 
     def _device(self) -> ShellyElevateIntegrationDevice | None:
-        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        entry: ShellyElevateIntegrationConfigEntry | None = self.hass.config_entries.async_get_entry(self.entry_id)
         if entry is None or entry.state is not ConfigEntryState.LOADED:
             return None
         return entry.runtime_data
@@ -192,10 +196,10 @@ class SettingsFixFlow(RepairsFlow):
 
     async def async_step_confirm(self, user_input: dict[str, Any] | None = None) -> RepairsFlowResult:
         """Confirm and apply."""
-        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        entry: ShellyElevateIntegrationConfigEntry | None = self.hass.config_entries.async_get_entry(self.entry_id)
         if entry is None or entry.state is not ConfigEntryState.LOADED:
             return self.async_abort(reason="not_loaded")
-        device: ShellyElevateIntegrationDevice = entry.runtime_data
+        device = entry.runtime_data
         if user_input is not None:
             try:
                 if self.fix == ISSUE_DUPLICATES:

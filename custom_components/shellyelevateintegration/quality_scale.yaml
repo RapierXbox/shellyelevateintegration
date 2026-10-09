@@ -89,5 +89,5 @@ rules:
   async-dependency: done
   inject-websession: done
   strict-typing:
-    status: todo
-    comment: The integration has no py.typed and is not checked with mypy.
+    status: done
+    comment: py.typed plus mypy --strict over the whole package, checked in CI (pytest.yml).

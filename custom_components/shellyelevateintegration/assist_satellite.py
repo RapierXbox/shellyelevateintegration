@@ -16,10 +16,11 @@ import logging
 from typing import Any
 
 from homeassistant.components import assist_satellite
-from homeassistant.components.assist_pipeline import PipelineEvent, PipelineEventType, PipelineStage
+from homeassistant.components.assist_pipeline import PipelineEvent, PipelineEventType
+from homeassistant.components.assist_pipeline.models import PipelineStage
 from homeassistant.components.assist_satellite.entity import AssistSatelliteState
 from homeassistant.components.intent import TimerEventType, TimerInfo, async_register_timer_handler
-from homeassistant.components.media_player import async_process_play_media_url
+from homeassistant.components.media_player.browse_media import async_process_play_media_url
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -44,7 +45,7 @@ class ShellyElevateIntegrationSatelliteDescription(
     """Satellite description."""
 
 
-STATE_TO_DEVICE = {
+STATE_TO_DEVICE: dict[str, str] = {
     AssistSatelliteState.IDLE: "idle",
     AssistSatelliteState.LISTENING: "listening",
     AssistSatelliteState.PROCESSING: "processing",
@@ -66,6 +67,8 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[assist_satel
 
 class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, assist_satellite.AssistSatelliteEntity):
     """The display as an Assist satellite."""
+
+    entity_description: ShellyElevateIntegrationSatelliteDescription
 
     _attr_name = None
     _attr_supported_features = (
@@ -256,7 +259,7 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
 
     @callback
     def _sync_device_state(self) -> None:
-        state = STATE_TO_DEVICE.get(self.state)  # type: ignore[arg-type]
+        state = STATE_TO_DEVICE.get(self.state or "")
         if state is not None and state != self._last_device_state:
             self._last_device_state = state
             self._send("voice.state", state=state)

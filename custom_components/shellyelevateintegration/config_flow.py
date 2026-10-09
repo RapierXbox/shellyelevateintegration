@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import (
     SOURCE_IGNORE,
@@ -20,7 +20,6 @@ from homeassistant.core import callback
 from homeassistant.helpers import instance_id, selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
-import voluptuous as vol
 
 from .api import (
     API_MAJOR,
@@ -77,6 +76,14 @@ from .const import (
     is_panel_entry,
 )
 from .settings.profiles import ProfileManager, async_get_profile_manager
+
+if TYPE_CHECKING:
+    # ha 2026.9+ aliases voluptuous to probatio at runtime
+    import probatio as vol
+
+    from .device import ShellyElevateIntegrationConfigEntry
+else:
+    import voluptuous as vol
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -621,8 +628,9 @@ class ShellyElevateIntegrationOptionsFlow(OptionsFlowWithReload):
 
     def _capabilities(self) -> Capabilities | None:
         """The display's capabilities, if it is connected."""
-        if self.config_entry.state is ConfigEntryState.LOADED:
-            return self.config_entry.runtime_data.info.capabilities
+        entry: ShellyElevateIntegrationConfigEntry = self.config_entry
+        if entry.state is ConfigEntryState.LOADED:
+            return entry.runtime_data.info.capabilities
         return None
 
     async def async_step_thermostat(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

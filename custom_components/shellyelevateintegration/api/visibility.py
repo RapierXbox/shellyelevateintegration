@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Collection, Iterable, Mapping
 from enum import Enum
-from typing import Any
+from typing import Any, TypeGuard
 
 from .models import SettingDef
 
@@ -24,7 +24,7 @@ class SettingState(Enum):
     """A `visible_if` condition fails or refers to a setting that is not shown itself."""
 
 
-def _is_number(value: Any) -> bool:
+def _is_number(value: Any) -> TypeGuard[int | float]:
     return isinstance(value, int | float) and not isinstance(value, bool)
 
 

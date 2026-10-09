@@ -7,6 +7,10 @@ import functools
 from typing import Any
 
 from homeassistant.components import websocket_api
+from homeassistant.components.websocket_api.connection import ActiveConnection
+from homeassistant.components.websocket_api.const import WebSocketCommandHandler
+from homeassistant.components.websocket_api.decorators import async_response, require_admin, websocket_command
+from homeassistant.components.websocket_api.messages import event_message
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
@@ -17,7 +21,7 @@ from .adb.apk import async_get_releases
 from .api import ShellyElevateIntegrationError
 from .api.app_schema import app_schema
 from .const import DOMAIN, SIGNAL_SETTINGS_CHANGED, is_panel_entry
-from .device import ShellyElevateIntegrationDevice
+from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .installer import ProvisionOptions, async_provision, default_dashboard_url
 from .revert import RevertOptions, async_revert, async_revert_check
 from .services import async_apply_profile, async_copy_settings, async_export_payload, async_profile_diff
@@ -27,7 +31,7 @@ from .settings.profiles import async_get_profile_manager
 
 
 def _device(hass: HomeAssistant, entry_id: str) -> ShellyElevateIntegrationDevice:
-    entry = hass.config_entries.async_get_entry(entry_id)
+    entry: ShellyElevateIntegrationConfigEntry | None = hass.config_entries.async_get_entry(entry_id)
     if entry is None or entry.domain != DOMAIN or is_panel_entry(entry) or entry.state is not ConfigEntryState.LOADED:
         raise HomeAssistantError(
             translation_domain=DOMAIN,
@@ -98,15 +102,21 @@ def _managed_settings(device: ShellyElevateIntegrationDevice, keys: set[str]) ->
     return {key: reason for key, reason in managed.items() if key in keys}
 
 
-type _CommandFn = Callable[[HomeAssistant, websocket_api.ActiveConnection, dict[str, Any]], Awaitable[dict[str, Any]]]
+def _command(schema: dict[Any, Any]) -> Callable[[WebSocketCommandHandler], WebSocketCommandHandler]:
+    """Websocket_command for a voluptuous schema."""
+    # core types the schema keys as probatio markers but voluptuous markers work too
+    return websocket_command(schema)
 
 
-def _cmd(schema: dict[Any, Any]) -> Callable[[_CommandFn], websocket_api.WebSocketCommandHandler]:
+type _CommandFn = Callable[[HomeAssistant, ActiveConnection, dict[str, Any]], Awaitable[dict[str, Any]]]
+
+
+def _cmd(schema: dict[Any, Any]) -> Callable[[_CommandFn], WebSocketCommandHandler]:
     """Admin-only async command; the return value is the result, HomeAssistantError an error."""
 
-    def decorator(fn: _CommandFn) -> websocket_api.WebSocketCommandHandler:
+    def decorator(fn: _CommandFn) -> WebSocketCommandHandler:
         @functools.wraps(fn)
-        async def handler(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+        async def handler(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
             try:
                 result = await fn(hass, connection, msg)
             except (HomeAssistantError, ShellyElevateIntegrationError) as err:
@@ -114,9 +124,7 @@ def _cmd(schema: dict[Any, Any]) -> Callable[[_CommandFn], websocket_api.WebSock
                 return
             connection.send_result(msg["id"], result)
 
-        return websocket_api.websocket_command(schema)(
-            websocket_api.require_admin(websocket_api.async_response(handler))
-        )
+        return websocket_command(schema)(require_admin(async_response(handler)))
 
     return decorator
 
@@ -125,9 +133,7 @@ def _cmd(schema: dict[Any, Any]) -> Callable[[_CommandFn], websocket_api.WebSock
 
 
 @_cmd({vol.Required("type"): f"{DOMAIN}/devices"})
-async def ws_devices(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_devices(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """List displays (including not loaded ones)."""
     out = []
     for entry in hass.config_entries.async_entries(DOMAIN):
@@ -143,9 +149,7 @@ async def ws_devices(
 
 
 @_cmd({vol.Required("type"): f"{DOMAIN}/settings/get", vol.Required("entry_id"): str})
-async def ws_settings_get(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_settings_get(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Settings + schema of a display."""
     device = _device(hass, msg["entry_id"])
     await device.async_refresh_settings()
@@ -176,19 +180,17 @@ async def ws_settings_get(
 
 
 @_cmd({vol.Required("type"): f"{DOMAIN}/settings/set", vol.Required("entry_id"): str, vol.Required("changes"): dict})
-async def ws_settings_set(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_settings_set(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Write settings; `ignored` lists the keys the display does not know (not written)."""
     device = _device(hass, msg["entry_id"])
     result = await device.async_set_settings(msg["changes"])
     return {"settings": result.settings, "ignored": result.ignored}
 
 
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/settings/subscribe", vol.Required("entry_id"): str})
-@websocket_api.require_admin
+@_command({vol.Required("type"): f"{DOMAIN}/settings/subscribe", vol.Required("entry_id"): str})
+@require_admin
 @callback
-def ws_settings_subscribe(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+def ws_settings_subscribe(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
     """Forward the setting changes of one display (from Home Assistant or the display itself).
 
     Keeps working while the entry reloads (the panel reads all settings again after a reconnect).
@@ -202,7 +204,7 @@ def ws_settings_subscribe(hass: HomeAssistant, connection: websocket_api.ActiveC
     @callback
     def forward(changes: dict[str, Any]) -> None:
         if changes:
-            connection.send_message(websocket_api.event_message(msg_id, {"changes": changes}))
+            connection.send_message(event_message(msg_id, {"changes": changes}))
 
     connection.subscriptions[msg_id] = async_dispatcher_connect(
         hass, SIGNAL_SETTINGS_CHANGED.format(entry.entry_id), forward
@@ -217,9 +219,7 @@ def ws_settings_subscribe(hass: HomeAssistant, connection: websocket_api.ActiveC
         vol.Optional("include_secrets", default=False): bool,
     }
 )
-async def ws_export(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_export(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Export settings."""
     device = _device(hass, msg["entry_id"])
     return await async_export_payload(device, msg["include_secrets"])
@@ -233,9 +233,7 @@ async def ws_export(
         vol.Optional("keys"): [str],
     }
 )
-async def ws_copy(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_copy(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Copy settings between displays."""
     source = _device(hass, msg["source"])
     targets = [_device(hass, entry_id) for entry_id in msg["targets"]]
@@ -250,9 +248,7 @@ async def ws_copy(
         vol.Optional("params", default={}): dict,
     }
 )
-async def ws_command(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_command(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Run a command on one or more displays (fleet actions)."""
     results: dict[str, Any] = {}
     for entry_id in msg["entry_ids"]:
@@ -270,9 +266,7 @@ async def ws_command(
 
 
 @_cmd({vol.Required("type"): f"{DOMAIN}/backups/list", vol.Optional("entry_id"): str})
-async def ws_backups_list(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_backups_list(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Backups of one display, or of all (also of displays that were removed)."""
     store = await async_get_backup_store(hass)
     if entry_id := msg.get("entry_id"):
@@ -282,9 +276,7 @@ async def ws_backups_list(
 
 
 @_cmd({vol.Required("type"): f"{DOMAIN}/backups/create", vol.Required("entry_id"): str, vol.Optional("name"): str})
-async def ws_backups_create(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_backups_create(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Create a backup."""
     device = _device(hass, msg["entry_id"])
     assert device.backups is not None
@@ -299,9 +291,7 @@ async def ws_backups_create(
         vol.Optional("source_device_id"): str,
     }
 )
-async def ws_backups_diff(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_backups_diff(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """What restoring a backup would change (backup may come from another display)."""
     device = _device(hass, msg["entry_id"])
     store = await async_get_backup_store(hass)
@@ -323,9 +313,7 @@ async def ws_backups_diff(
         vol.Optional("keys"): [str],
     }
 )
-async def ws_backups_restore(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_backups_restore(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Restore (selected keys of) a backup."""
     device = _device(hass, msg["entry_id"])
     assert device.backups is not None
@@ -341,9 +329,7 @@ async def ws_backups_restore(
 @_cmd(
     {vol.Required("type"): f"{DOMAIN}/backups/delete", vol.Required("device_id"): str, vol.Required("backup_id"): str}
 )
-async def ws_backups_delete(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_backups_delete(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Delete a backup."""
     store = await async_get_backup_store(hass)
     store.delete(msg["device_id"], msg["backup_id"])
@@ -354,9 +340,7 @@ async def ws_backups_delete(
 
 
 @_cmd({vol.Required("type"): f"{DOMAIN}/profiles/list"})
-async def ws_profiles_list(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_profiles_list(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """List profiles."""
     manager = await async_get_profile_manager(hass)
     return {"profiles": manager.as_list(), "default": manager.default_profile_id}
@@ -373,9 +357,7 @@ async def ws_profiles_list(
         vol.Optional("make_default"): bool,
     }
 )
-async def ws_profiles_save(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_profiles_save(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Create/update a profile from explicit settings or from a display."""
     manager = await async_get_profile_manager(hass)
     settings = dict(msg.get("settings") or {})
@@ -398,18 +380,14 @@ async def ws_profiles_save(
 
 
 @_cmd({vol.Required("type"): f"{DOMAIN}/profiles/delete", vol.Required("profile_id"): str})
-async def ws_profiles_delete(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_profiles_delete(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Delete a profile."""
     await (await async_get_profile_manager(hass)).async_delete(msg["profile_id"])
     return {}
 
 
 @_cmd({vol.Required("type"): f"{DOMAIN}/profiles/set_default", vol.Optional("profile_id"): vol.Any(str, None)})
-async def ws_profiles_default(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_profiles_default(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Set the default profile for new displays."""
     await (await async_get_profile_manager(hass)).async_set_default(msg.get("profile_id"))
     return {}
@@ -423,9 +401,7 @@ async def ws_profiles_default(
         vol.Optional("dry_run", default=False): bool,
     }
 )
-async def ws_profiles_apply(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_profiles_apply(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Apply a profile to displays (or preview the changes)."""
     (await async_get_profile_manager(hass)).get(msg["profile_id"])  # unknown profile: one error, not one per display
     results: dict[str, Any] = {}
@@ -446,9 +422,7 @@ async def ws_profiles_apply(
 
 
 @_cmd({vol.Required("type"): f"{DOMAIN}/installer/info"})
-async def ws_installer_info(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_installer_info(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Everything the install wizard needs."""
     releases = []
     try:
@@ -467,7 +441,7 @@ async def ws_installer_info(
     }
 
 
-@websocket_api.websocket_command(
+@_command(
     {
         vol.Required("type"): f"{DOMAIN}/installer/provision",
         vol.Required("host"): str,
@@ -479,9 +453,9 @@ async def ws_installer_info(
         vol.Optional("dashboard_url"): vol.Any(str, None),
     }
 )
-@websocket_api.require_admin
-@websocket_api.async_response
-async def ws_provision(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+@require_admin
+@async_response
+async def ws_provision(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
     """Install + provision a display over ADB (subscription with progress events)."""
     msg_id = msg["id"]
     options = ProvisionOptions(
@@ -495,7 +469,7 @@ async def ws_provision(hass: HomeAssistant, connection: websocket_api.ActiveConn
     )
 
     def send(event: dict[str, Any]) -> None:
-        connection.send_message(websocket_api.event_message(msg_id, event))
+        connection.send_message(event_message(msg_id, event))
 
     async def run() -> None:
         try:
@@ -516,14 +490,12 @@ async def ws_provision(hass: HomeAssistant, connection: websocket_api.ActiveConn
 
 
 @_cmd({vol.Required("type"): f"{DOMAIN}/revert/check", vol.Required("host"): str})
-async def ws_revert_check(
-    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
-) -> dict[str, Any]:
+async def ws_revert_check(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Read-only: what reverting the display at `host` would find and do."""
     return await async_revert_check(hass, msg["host"])
 
 
-@websocket_api.websocket_command(
+@_command(
     {
         vol.Required("type"): f"{DOMAIN}/revert/run",
         vol.Required("host"): str,
@@ -534,9 +506,9 @@ async def ws_revert_check(
         vol.Optional("accept_wifi_loss", default=False): bool,
     }
 )
-@websocket_api.require_admin
-@websocket_api.async_response
-async def ws_revert(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+@require_admin
+@async_response
+async def ws_revert(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
     """Revert a display to stock (subscription with progress events, like the installer)."""
     msg_id = msg["id"]
     options = RevertOptions(
@@ -549,7 +521,7 @@ async def ws_revert(hass: HomeAssistant, connection: websocket_api.ActiveConnect
     )
 
     def send(event: dict[str, Any]) -> None:
-        connection.send_message(websocket_api.event_message(msg_id, event))
+        connection.send_message(event_message(msg_id, event))
 
     async def run() -> None:
         try:

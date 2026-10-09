@@ -8,17 +8,15 @@ import logging
 from typing import Any
 
 from homeassistant.components import media_source
-from homeassistant.components.media_player import (
-    BrowseMedia,
+from homeassistant.components.media_player import MediaPlayerEntity, MediaPlayerEntityDescription
+from homeassistant.components.media_player.browse_media import BrowseMedia, async_process_play_media_url
+from homeassistant.components.media_player.const import (
     MediaPlayerDeviceClass,
     MediaPlayerEnqueue,
-    MediaPlayerEntity,
-    MediaPlayerEntityDescription,
     MediaPlayerEntityFeature,
     MediaPlayerState,
     MediaType,
     RepeatMode,
-    async_process_play_media_url,
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -85,6 +83,8 @@ class ShellyElevateIntegrationMediaPlayer(ShellyElevateIntegrationEntity, MediaP
     With protocol v1 the state comes from `media_status` pushes. The legacy app has no
     readback, so the legacy client tracks state optimistically.
     """
+
+    entity_description: ShellyElevateIntegrationMediaPlayerDescription
 
     _attr_device_class = MediaPlayerDeviceClass.SPEAKER
     _attr_name = None

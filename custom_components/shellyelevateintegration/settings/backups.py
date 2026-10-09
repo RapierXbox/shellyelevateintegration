@@ -224,10 +224,6 @@ class BackupManager:
         assert backup is not None
         return backup
 
-    def list(self) -> list[dict[str, Any]]:
-        """Backups, newest first."""
-        return self.store.list(self.device.device_id)
-
     async def _async_restore_target(self, settings: dict[str, Any], keys: list[str] | None) -> dict[str, Any]:
         known = await self.device.async_known_keys()
         return {k: v for k, v in settings.items() if k in known and (keys is None or k in keys)}
@@ -246,3 +242,8 @@ class BackupManager:
         self.snapshot(REASON_BEFORE_RESTORE)
         await self.device.async_set_settings({item["key"]: item["new"] for item in changes})
         return changes
+
+    # defined last so it does not shadow the builtin list in the annotations above
+    def list(self) -> list[dict[str, Any]]:
+        """Backups, newest first."""
+        return self.store.list(self.device.device_id)

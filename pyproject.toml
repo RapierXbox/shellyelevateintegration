@@ -31,3 +31,16 @@ omit = ["*/frontend/*"]
 show_missing = true
 skip_covered = false
 exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+warn_unreachable = true
+explicit_package_bases = true
+mypy_path = "."
+packages = ["custom_components.shellyelevateintegration"]
+
+[[tool.mypy.overrides]]
+# third party libraries without type information
+module = ["adb_shell.*", "zeroconf.*"]
+ignore_missing_imports = true

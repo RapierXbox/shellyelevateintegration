@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from homeassistant.components.notify import NotifyEntity, NotifyEntityDescription, NotifyEntityFeature
+from homeassistant.components.notify import NotifyEntity, NotifyEntityDescription
+from homeassistant.components.notify.const import NotifyEntityFeature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -33,6 +34,8 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[NotifyEntity
 
 class ShellyElevateIntegrationNotify(ShellyElevateIntegrationEntity, NotifyEntity):
     """Shows a toast on the display."""
+
+    entity_description: ShellyElevateIntegrationNotifyDescription
 
     _attr_supported_features = NotifyEntityFeature.TITLE
 

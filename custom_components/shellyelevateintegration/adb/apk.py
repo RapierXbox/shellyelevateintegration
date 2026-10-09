@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import hashlib
 import logging
 import time
-from typing import Any
+from typing import Any, TypedDict
 
 import aiohttp
 from homeassistant.core import HomeAssistant
@@ -20,7 +20,6 @@ _LOGGER = logging.getLogger(__name__)
 
 CACHE_SECONDS = 3600
 MAX_APK_SIZE = 200 * 1024 * 1024
-_CACHE: HassKey[dict[str, Any]] = HassKey(f"{DOMAIN}_release_cache")
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +35,14 @@ class AppRelease:
     sha256: str | None
     notes: str | None
     published: str | None
+
+
+class _ReleaseCache(TypedDict, total=False):
+    releases: list[AppRelease]
+    at: float
+
+
+_CACHE: HassKey[_ReleaseCache] = HassKey(f"{DOMAIN}_release_cache")
 
 
 def _parse(release: dict[str, Any]) -> AppRelease | None:
@@ -62,7 +69,7 @@ def _parse(release: dict[str, Any]) -> AppRelease | None:
 
 async def async_get_releases(hass: HomeAssistant, *, force: bool = False) -> list[AppRelease]:
     """All releases with an APK (newest first), cached for an hour."""
-    cache = hass.data.setdefault(_CACHE, {})
+    cache = hass.data.setdefault(_CACHE, _ReleaseCache())
     if not force and cache.get("releases") is not None and time.monotonic() - cache["at"] < CACHE_SECONDS:
         return cache["releases"]
     session = async_get_clientsession(hass)
@@ -84,7 +91,7 @@ async def async_get_releases(hass: HomeAssistant, *, force: bool = False) -> lis
             translation_placeholders={"error": str(err)},
         ) from err
     releases = [r for r in (_parse(item) for item in data if not item.get("draft")) if r is not None]
-    cache.update(releases=releases, at=time.monotonic())
+    cache.update({"releases": releases, "at": time.monotonic()})
     return releases
 
 

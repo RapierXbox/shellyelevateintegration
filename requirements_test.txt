@@ -24,3 +24,4 @@ pymicro-vad==1.0.1
 pyspeex-noise==1.0.2
 mutagen==1.48.1
 ha-ffmpeg==3.2.2
+mypy==2.4.0

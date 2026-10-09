@@ -149,7 +149,9 @@ async def test_poll_loop(make_client: Any, legacy_server: AppServer) -> None:
         assert {"type": "_info_changed"} in messages
 
         legacy_server.legacy_down = True
-        await _until(lambda: not client.connected)
+        # fast polls skip endpoints that answer errors so only slow polls count as failures
+        with patch(f"{LEGACY}.SLOW_INTERVAL", 0):
+            await _until(lambda: not client.connected)
         legacy_server.legacy_down = False
         await _until(lambda: client.connected)
         assert changes[-2:] == [False, True]

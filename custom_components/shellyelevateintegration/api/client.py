@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 import contextlib
 import hashlib
 import hmac
@@ -10,7 +11,7 @@ import itertools
 import logging
 import ssl
 import time
-from typing import Any
+from typing import Any, Literal, overload
 
 import aiohttp
 
@@ -125,7 +126,10 @@ async def async_probe(
     two, so a plain HTTP server is not sent a TLS handshake every time.
     """
     plain_port = LEGACY_PORT if port == DEFAULT_PORT else port
-    attempts = [lambda: _probe_v1(session, host, port), lambda: _probe_plain(session, host, plain_port)]
+    attempts: list[Callable[[], Awaitable[Hello]]] = [
+        lambda: _probe_v1(session, host, port),
+        lambda: _probe_plain(session, host, plain_port),
+    ]
     if plain_first:
         attempts.reverse()
     if port != DEFAULT_PORT:
@@ -146,9 +150,11 @@ async def _probe_v1(session: aiohttp.ClientSession, host: str, port: int) -> Hel
     """Unauthenticated hello over TLS; records the (not yet trusted) certificate fingerprint."""
     fingerprint = await _fetch_fingerprint(host, port)
     url = f"{base_url(host, port, tls=True)}/api/v1/hello"
+    # a sha256 hex digest always parses (aiohttp treats a missing check as ssl=True)
+    pinned = _pinned(fingerprint)
     try:
         async with session.get(
-            url, ssl=_pinned(fingerprint), timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
+            url, ssl=True if pinned is None else pinned, timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT)
         ) as resp:
             if resp.status != 200:
                 raise ShellyElevateIntegrationConnectionError(f"HTTP {resp.status} from {url}")
@@ -309,6 +315,26 @@ class ShellyElevateIntegrationClient(ShellyElevateIntegrationApi):
 
     # ---------------------------------------------------------------- HTTP
 
+    @overload
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any = None,
+        params: dict[str, Any] | None = None,
+        raw: Literal[False] = False,
+    ) -> Any: ...
+    @overload
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any = None,
+        params: dict[str, Any] | None = None,
+        raw: Literal[True],
+    ) -> bytes: ...
     async def _request(
         self,
         method: str,
@@ -492,14 +518,18 @@ class ShellyElevateIntegrationClient(ShellyElevateIntegrationApi):
     # ---------------------------------------------------------------- WebSocket
 
     async def _ws_loop(self) -> None:
+        # connect starts this only after a request over the pinned certificate went through
+        assert self._ssl is not None
+        pinned = self._ssl
         delay = RECONNECT_MIN
-        while not self._closing:
+        # checked at the end of each attempt (disconnect cancels this task while it waits)
+        while True:
             opened: float | None = None
             try:
                 async with self._session.ws_connect(
                     f"{self._base}/api/v1/ws",
                     headers=self._headers,
-                    ssl=self._ssl,
+                    ssl=pinned,
                     heartbeat=HEARTBEAT,
                     timeout=aiohttp.ClientWSTimeout(ws_close=REQUEST_TIMEOUT),
                 ) as ws:

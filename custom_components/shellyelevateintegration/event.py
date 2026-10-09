@@ -61,6 +61,8 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[EventEntity]
 class _ShellyElevateIntegrationEvent(ShellyElevateIntegrationEntity, EventEntity):
     """Base class: fires on matching `event` messages from the display."""
 
+    entity_description: ShellyElevateIntegrationEventDescription
+
     async def async_added_to_hass(self) -> None:
         """Listen for display events."""
         await super().async_added_to_hass()

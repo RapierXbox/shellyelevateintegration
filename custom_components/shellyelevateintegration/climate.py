@@ -11,14 +11,8 @@ from datetime import datetime, timedelta
 import logging
 from typing import Any
 
-from homeassistant.components.climate import (
-    ATTR_HVAC_MODE,
-    ClimateEntity,
-    ClimateEntityDescription,
-    ClimateEntityFeature,
-    HVACAction,
-    HVACMode,
-)
+from homeassistant.components.climate import ClimateEntity, ClimateEntityDescription
+from homeassistant.components.climate.const import ATTR_HVAC_MODE, ClimateEntityFeature, HVACAction, HVACMode
 from homeassistant.const import (
     ATTR_TEMPERATURE,
     ATTR_UNIT_OF_MEASUREMENT,
@@ -86,6 +80,8 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[ClimateEntit
 
 class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, ClimateEntity, RestoreEntity):
     """Switches a display relay to keep the target temperature."""
+
+    entity_description: ShellyElevateIntegrationClimateDescription
 
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 0.5

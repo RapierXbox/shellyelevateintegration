@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
-from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity, SwitchEntityDescription
+from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
+from homeassistant.components.switch.const import SwitchDeviceClass
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -95,12 +96,16 @@ async def async_setup_entry(
 class ShellyElevateIntegrationRelaySwitch(ShellyElevateIntegrationRelayEntity, SwitchEntity):
     """A relay (unless the "relays as lights" option is set)."""
 
+    entity_description: ShellyElevateIntegrationSwitchDescription
+
     _attr_device_class = SwitchDeviceClass.OUTLET
     description_cls = ShellyElevateIntegrationSwitchDescription
 
 
 class ShellyElevateIntegrationNightModeSwitch(ShellyElevateIntegrationEntity, SwitchEntity):
     """Night mode."""
+
+    entity_description: ShellyElevateIntegrationSwitchDescription
 
     @property
     def is_on(self) -> bool | None:
@@ -118,6 +123,8 @@ class ShellyElevateIntegrationNightModeSwitch(ShellyElevateIntegrationEntity, Sw
 
 class ShellyElevateIntegrationSettingSwitch(ShellyElevateIntegrationEntity, SwitchEntity):
     """A boolean display setting."""
+
+    entity_description: ShellyElevateIntegrationSwitchDescription
 
     @property
     def is_on(self) -> bool | None:

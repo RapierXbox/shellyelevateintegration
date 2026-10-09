@@ -11,7 +11,6 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
-from adb_shell.adb_device_async import AdbDeviceAsync
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
@@ -21,7 +20,7 @@ from ..repairs import async_set_app_down
 from . import steps
 from .apk import AppRelease, async_download_apk, async_latest_release
 from .keys import AdbKey, async_get_adb_key
-from .transport import create_device
+from .transport import AdbDevice, create_device
 
 if TYPE_CHECKING:
     from ..device import ShellyElevateIntegrationDevice
@@ -69,7 +68,7 @@ class AdbManager:
         self._key = key
         self._lock = asyncio.Lock()
 
-    async def _connect(self, auth_timeout: float) -> AdbDeviceAsync:
+    async def _connect(self, auth_timeout: float) -> AdbDevice:
         device = create_device(self.host, self.port)
         signer = await self.hass.async_add_executor_job(self._key.signer)
         try:
@@ -83,7 +82,7 @@ class AdbManager:
             ) from err
         return device
 
-    async def async_session[T](self, fn: Callable[[AdbDeviceAsync], Awaitable[T]], *, auth_timeout: float = 5) -> T:
+    async def async_session[T](self, fn: Callable[[AdbDevice], Awaitable[T]], *, auth_timeout: float = 5) -> T:
         """Run `fn(device)` in an ADB session; errors become AdbError."""
         async with self._lock:
             device = await self._connect(auth_timeout)
@@ -111,7 +110,7 @@ class AdbManager:
     async def async_shell(self, command: str, *, timeout: float = 30, auth_timeout: float = 5) -> str:
         """Run a shell command and return its output."""
 
-        async def _run(device: AdbDeviceAsync) -> str:
+        async def _run(device: AdbDevice) -> str:
             return await device.shell(command, transport_timeout_s=timeout, read_timeout_s=timeout, timeout_s=timeout)
 
         return await self.async_session(_run, auth_timeout=auth_timeout)
@@ -126,14 +125,14 @@ class AdbManager:
     ) -> dict[str, str]:
         """Run several commands in one session. Returns step -> output."""
 
-        async def _run(device: AdbDeviceAsync) -> dict[str, str]:
+        async def _run(device: AdbDevice) -> dict[str, str]:
             return await self._run_steps(device, commands, progress, fatal=fatal)
 
         return await self.async_session(_run, auth_timeout=auth_timeout)
 
     async def _run_steps(
         self,
-        device: AdbDeviceAsync,
+        device: AdbDevice,
         commands: list[tuple[str, str]],
         progress: ProgressCallback | None = None,
         *,
@@ -187,7 +186,7 @@ class AdbManager:
     async def async_revert_check(self) -> tuple[steps.Platform, steps.RevertCheck]:
         """Read-only: what a revert would find on the display."""
 
-        async def _run(device: AdbDeviceAsync) -> tuple[steps.Platform, steps.RevertCheck]:
+        async def _run(device: AdbDevice) -> tuple[steps.Platform, steps.RevertCheck]:
             platform = await device.shell(steps.PLATFORM_CHECK, transport_timeout_s=30, read_timeout_s=30)
             check = await device.shell(steps.REVERT_CHECK, transport_timeout_s=60, read_timeout_s=60)
             return steps.parse_platform(platform), steps.parse_revert_check(check)
@@ -198,7 +197,7 @@ class AdbManager:
         """Turn ADB over the network off; the last command drops the session, which is expected."""
         commands = steps.disable_adb_commands(self._key.public, root=root)
 
-        async def _run(device: AdbDeviceAsync) -> None:
+        async def _run(device: AdbDevice) -> None:
             for step_id, command in commands:
                 if progress:
                     progress(step_id, {"status": "running", "command": command})
@@ -219,7 +218,7 @@ class AdbManager:
     async def async_reboot(self) -> None:
         """Reboot the display."""
 
-        async def _run(device: AdbDeviceAsync) -> None:
+        async def _run(device: AdbDevice) -> None:
             await device.reboot(transport_timeout_s=15)
 
         await self.async_session(_run)
@@ -229,7 +228,7 @@ class AdbManager:
     async def async_install_apk(self, apk: bytes, progress: ProgressCallback | None = None) -> None:
         """Push and install an APK."""
 
-        async def _run(device: AdbDeviceAsync) -> None:
+        async def _run(device: AdbDevice) -> None:
             if progress:
                 progress(
                     "push",
@@ -294,7 +293,7 @@ class AdbManager:
         checked when it is used, so it needs no restart.
         """
 
-        async def _run(device: AdbDeviceAsync) -> PermissionGrant:
+        async def _run(device: AdbDevice) -> PermissionGrant:
             platform = steps.parse_platform(
                 await device.shell(steps.PLATFORM_CHECK, transport_timeout_s=30, read_timeout_s=30)
             )
@@ -324,7 +323,7 @@ class AdbManager:
     async def async_missing_permissions(self, *, auth_timeout: float = 5) -> list[str]:
         """Read-only: what async_grant_permissions would grant (short names and `location_mode`)."""
 
-        async def _run(device: AdbDeviceAsync) -> list[str]:
+        async def _run(device: AdbDevice) -> list[str]:
             platform = steps.parse_platform(
                 await device.shell(steps.PLATFORM_CHECK, transport_timeout_s=30, read_timeout_s=30)
             )
@@ -356,7 +355,7 @@ class AdbManager:
     async def async_screenshot(self) -> bytes:
         """PNG screenshot via screencap."""
 
-        async def _run(device: AdbDeviceAsync) -> bytes:
+        async def _run(device: AdbDevice) -> bytes:
             return await device.exec_out("screencap -p", decode=False, transport_timeout_s=30, read_timeout_s=30)
 
         return await self.async_session(_run)
@@ -366,7 +365,7 @@ class AdbManager:
         return await self.async_shell(f"logcat -d -t {int(lines)}", timeout=30)
 
 
-async def _close(device: AdbDeviceAsync) -> None:
+async def _close(device: AdbDevice) -> None:
     try:
         await device.close()
     except Exception:

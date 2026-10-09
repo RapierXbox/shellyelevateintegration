@@ -175,6 +175,8 @@ class ShellyElevateIntegrationSensor(ShellyElevateIntegrationEntity, SensorEntit
 class ShellyElevateIntegrationUptimeSensor(ShellyElevateIntegrationEntity, SensorEntity):
     """Boot time derived from uptime (stable timestamp, no state churn)."""
 
+    entity_description: ShellyElevateIntegrationSensorDescription
+
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_entity_registry_enabled_default = False

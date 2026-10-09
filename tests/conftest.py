@@ -14,6 +14,10 @@ from homeassistant.setup import async_setup_component
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+# pytest-aiohttp has an aiohttp_client too and the plugin load order picks the winner;
+# only this one keeps the router open for views registered after the client started (websocket_api)
+from pytest_homeassistant_custom_component.plugins import aiohttp_client  # noqa: F401
+
 from custom_components.shellyelevateintegration.adb.apk import _CACHE, AppRelease
 from custom_components.shellyelevateintegration.adb.manager import PermissionGrant
 from custom_components.shellyelevateintegration.const import (

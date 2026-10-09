@@ -54,6 +54,7 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[UpdateEntity
 class ShellyElevateIntegrationAppUpdate(ShellyElevateIntegrationEntity, UpdateEntity):
     """ShellyElevate app version."""
 
+    entity_description: ShellyElevateIntegrationUpdateDescription
     _attr_device_class = UpdateDeviceClass.FIRMWARE
     _attr_should_poll = True
     _attr_title = "ShellyElevate"

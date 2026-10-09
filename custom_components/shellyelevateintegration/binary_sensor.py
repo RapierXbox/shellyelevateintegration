@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    BinarySensorEntity,
-    BinarySensorEntityDescription,
-)
+from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorEntityDescription
+from homeassistant.components.binary_sensor.const import BinarySensorDeviceClass
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -81,6 +78,8 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[BinarySensor
 
 class ShellyElevateIntegrationBinarySensor(ShellyElevateIntegrationEntity, BinarySensorEntity):
     """Binary sensor backed by one state key."""
+
+    entity_description: ShellyElevateIntegrationBinarySensorDescription
 
     def __init__(
         self, device: ShellyElevateIntegrationDevice, description: ShellyElevateIntegrationBinarySensorDescription
