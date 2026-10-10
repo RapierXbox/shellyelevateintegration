@@ -188,7 +188,9 @@ class ShellyElevateIntegrationDevice:
             manufacturer=MANUFACTURER,
             model=info.model_name,
             model_id=info.model,
-            name=self.entry.title,
+            # the live name the display reports, which is unique per device; the
+            # config title is only the fallback for a device that never connected
+            name=info.name or self.entry.title,
             sw_version=info.fw_version,
             configuration_url=base_url(self.client.host, self.client.port, tls=not self.client.legacy),
         )
