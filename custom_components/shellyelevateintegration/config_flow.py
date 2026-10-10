@@ -691,7 +691,7 @@ class ShellyElevateIntegrationOptionsFlow(OptionsFlowWithReload):
                 ),
                 vol.Required(OPT_THERMOSTAT_MIN_CYCLE, default=0): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=0, max=3600, step=10, unit_of_measurement="s", mode=selector.NumberSelectorMode.BOX
+                        min=0, max=86400, step=10, unit_of_measurement="s", mode=selector.NumberSelectorMode.BOX
                     )
                 ),
                 vol.Required(OPT_THERMOSTAT_MIN_TEMP, default=DEFAULT_THERMOSTAT_MIN_TEMP): selector.NumberSelector(
