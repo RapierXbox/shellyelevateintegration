@@ -25,6 +25,7 @@ from .features import FEATURE_KEYS, SCHEMA_LOADED
 
 if TYPE_CHECKING:
     from .adb.manager import AdbManager
+    from .ha_login import DisplayLogin
     from .image import ShellyElevateIntegrationScreenshot
     from .permissions import PermissionGuard
     from .settings.backups import BackupManager
@@ -56,6 +57,7 @@ class ShellyElevateIntegrationDevice:
         self.backups: BackupManager | None = None
         self.adb: AdbManager | None = None
         self.permissions: PermissionGuard | None = None
+        self.ha_login: DisplayLogin | None = None
         self.screenshot_entity: ShellyElevateIntegrationScreenshot | None = None
         self.voice_enabled = False
         """Voice can run through this integration (microphone and the Assist pipeline stack)."""

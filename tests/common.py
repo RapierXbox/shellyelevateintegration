@@ -7,6 +7,7 @@ import contextlib
 import copy
 from typing import Any
 from unittest.mock import AsyncMock, patch
+from urllib.parse import urlsplit
 
 from custom_components.shellyelevateintegration.api import (
     Capabilities,
@@ -15,6 +16,7 @@ from custom_components.shellyelevateintegration.api import (
     SettingDef,
     SettingsWrite,
     ShellyElevateIntegrationApi,
+    ShellyElevateIntegrationCommandError,
 )
 from custom_components.shellyelevateintegration.api.app_schema import with_app_rules
 from custom_components.shellyelevateintegration.api.client import _with_transport_caps
@@ -72,6 +74,55 @@ class FakeDisplay:
         self.mocks: dict[str, AsyncMock] = {}
         self.others: dict[str, FakeDisplay] = {}
         """Further displays the clients of this one reach, by host."""
+        self.ha_login_supported = False
+        """The app knows ha_login.* (off by default like an app from before the dashboard login)."""
+        self.ha_login: dict[str, Any] | None = None
+        """The dashboard login the app holds."""
+        self.ha_login_refused = False
+        self.login_commands: list[tuple[str, dict[str, Any]]] = []
+        """ha_login.* commands (kept out of `commands` so the background login check stays invisible)."""
+
+    def ha_login_origin(self) -> str | None:
+        """Origin of the dashboard url like the app derives it."""
+        url = self.settings.get("webviewUrl") or ""
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            return None
+        default = {"http": 80, "https": 443}[parts.scheme]
+        port = "" if parts.port in (None, default) else f":{parts.port}"
+        return f"{parts.scheme}://{parts.hostname}{port}"
+
+    def ha_login_status(self) -> dict[str, Any]:
+        """What ha_login.status answers."""
+        origin = self.ha_login_origin()
+        if self.ha_login is not None and self.ha_login["origin"] != origin:
+            self.ha_login = None  # the app wipes a login for another origin
+        state = "none"
+        if self.ha_login is not None:
+            state = "invalid" if self.ha_login_refused else "ok"
+        return {
+            "state": state,
+            "user": self.ha_login["user"] if self.ha_login else None,
+            "origin": origin,
+            "client_id": f"{origin}/" if origin else None,
+        }
+
+    def ha_login_command(self, action: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Answer an ha_login.* command like the app."""
+        self.login_commands.append((action, params))
+        if not self.ha_login_supported:
+            raise ShellyElevateIntegrationCommandError("unknown_action", action)
+        if (error := self.command_errors.get(action)) is not None:
+            raise error
+        if action == "ha_login.set":
+            origin = self.ha_login_origin()
+            if params["origin"] != origin or params["client_id"] != f"{origin}/":
+                raise ShellyElevateIntegrationCommandError("origin_mismatch", "the dashboard url is elsewhere")
+            self.ha_login = dict(params)
+            self.ha_login_refused = False
+        elif action == "ha_login.clear":
+            self.ha_login = None
+        return self.ha_login_status()
 
     @property
     def client(self) -> FakeClient:
@@ -181,6 +232,8 @@ class FakeClient(ShellyElevateIntegrationApi):
 
     async def command(self, action: str, /, **params: Any) -> dict[str, Any]:
         """Record the command."""
+        if action.startswith("ha_login."):
+            return self.display.ha_login_command(action, params)
         self.display.commands.append((action, params))
         if (error := self.display.command_errors.get(action)) is not None:
             raise error

@@ -188,6 +188,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShellyElevateIntegration
         raise
 
     async_check_issues(hass, device)
+    if not device.legacy:
+        from .ha_login import DisplayLogin, async_get_ha_login_manager
+
+        device.ha_login = DisplayLogin(device, await async_get_ha_login_manager(hass))
+        device.ha_login.async_start()
+        entry.async_on_unload(device.ha_login.async_stop)
     if device.permissions is not None:
         device.permissions.async_start()
         entry.async_on_unload(device.permissions.async_stop)
@@ -303,7 +309,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ShellyElevateIntegratio
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ShellyElevateIntegrationConfigEntry) -> None:
-    """Revoke our token on the display when the entry is deleted (best effort)."""
+    """Revoke our token on the display and its dashboard login when the entry is deleted (best effort)."""
+    from .ha_login import async_remove_token
+
+    async_remove_token(hass, entry)
     if entry.data.get(CONF_LEGACY) or not entry.data.get(CONF_TOKEN):
         return
     client = _create_client(hass, entry)

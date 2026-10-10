@@ -29,6 +29,8 @@ CONF_FEATURES_AUTO_HANDLED: Final = "features_auto_handled"
 
 A key a profile or the installer set when the display was added counts as handled from the start.
 """
+CONF_HA_LOGIN_TOKEN: Final = "ha_login_token_id"
+"""Id of the Home Assistant refresh token the display logs its dashboard in with (see ha_login.py)."""
 AUTO_FEATURES: Final = frozenset({"mediaEnabled", "bleScannerEnabled", "haVoiceEnabled"})
 """Settings turned on once on a newly added display (see CONF_FEATURES_AUTO_ENABLED)."""
 
@@ -39,6 +41,10 @@ OPT_AUTO_BACKUP: Final = "auto_backup"
 OPT_BACKUP_KEEP: Final = "backup_keep"
 OPT_WATCHDOG: Final = "watchdog"
 OPT_ADB: Final = "adb"
+OPT_HA_LOGIN: Final = "ha_login"
+"""Keep the dashboard of the display logged into Home Assistant (on by default)."""
+OPT_HA_LOGIN_USER: Final = "ha_login_user"
+"""User the dashboard logs in as; unset uses the default of the panel."""
 OPT_THERMOSTAT: Final = "thermostat"
 OPT_THERMOSTAT_RELAY: Final = "thermostat_relay"
 OPT_THERMOSTAT_SENSOR: Final = "thermostat_sensor"

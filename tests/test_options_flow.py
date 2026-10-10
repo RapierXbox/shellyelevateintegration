@@ -19,6 +19,8 @@ from custom_components.shellyelevateintegration.const import (
     OPT_ADB,
     OPT_AUTO_BACKUP,
     OPT_BACKUP_KEEP,
+    OPT_HA_LOGIN,
+    OPT_HA_LOGIN_USER,
     OPT_RELAYS_AS_LIGHTS,
     OPT_THERMOSTAT,
     OPT_THERMOSTAT_MAX_TEMP,
@@ -80,6 +82,7 @@ GENERAL = {
     OPT_UPDATE_CHANNEL: "beta",
     OPT_ADB: False,
     OPT_WATCHDOG: False,
+    OPT_HA_LOGIN: True,
 }
 THERMOSTAT = {
     OPT_THERMOSTAT_RELAY: "1",
@@ -122,6 +125,26 @@ async def test_options_general_only(hass: HomeAssistant, init_integration: MockC
     await hass.async_block_till_done()
     assert init_integration.options == GENERAL
     assert init_integration.state is ConfigEntryState.LOADED
+
+
+async def test_options_login_user(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
+    """People can be picked as the login user and clearing the pick goes back to the default."""
+    person = await hass.auth.async_create_user("Wall", group_ids=["system-users"])
+    result = await hass.config_entries.options.async_init(init_integration.entry_id)
+    field = next(item for item in result["data_schema"].schema if item == OPT_HA_LOGIN_USER)
+    options = result["data_schema"].schema[field].config["options"]
+    assert {"value": person.id, "label": "Wall"} in options
+    assert all(option["label"] != "Home Assistant Content" for option in options)  # no system users
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {**GENERAL, OPT_HA_LOGIN_USER: person.id}
+    )
+    assert result["data"][OPT_HA_LOGIN_USER] == person.id
+    await hass.async_block_till_done()
+
+    result = await hass.config_entries.options.async_init(init_integration.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], GENERAL)
+    assert OPT_HA_LOGIN_USER not in result["data"]
+    await hass.async_block_till_done()
 
 
 async def test_options_thermostat(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:

@@ -22,6 +22,7 @@ from .api import ShellyElevateIntegrationError
 from .api.app_schema import app_schema
 from .const import DOMAIN, SIGNAL_SETTINGS_CHANGED, is_panel_entry
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
+from .ha_login import async_get_ha_login_manager
 from .installer import ProvisionOptions, async_provision, default_dashboard_url
 from .revert import RevertOptions, async_revert, async_revert_check
 from .services import async_apply_profile, async_copy_settings, async_export_payload, async_profile_diff
@@ -57,6 +58,7 @@ def _device_summary(device: ShellyElevateIntegrationDevice) -> dict[str, Any]:
         "available": device.available,
         "adb": device.adb is not None,
         "capabilities": info.capabilities.as_dict(),
+        "ha_login": device.ha_login.status if device.ha_login is not None else None,
     }
 
 
@@ -260,6 +262,63 @@ async def ws_command(hass: HomeAssistant, connection: ActiveConnection, msg: dic
         except HomeAssistantError as err:
             results[entry_id] = {"ok": False, "error": str(err)}
     return {"results": results}
+
+
+# --------------------------------------------------------------------------- dashboard login
+
+
+@_cmd({vol.Required("type"): f"{DOMAIN}/ha_login/config"})
+async def ws_ha_login_config(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
+    """The default login user and the users a dashboard can log in as."""
+    manager = await async_get_ha_login_manager(hass)
+    return {
+        "default_user_id": manager.default_user_id,
+        "dedicated_user_id": manager.dedicated_user_id,
+        "users": await manager.async_users(),
+    }
+
+
+@_cmd({vol.Required("type"): f"{DOMAIN}/ha_login/set_default", vol.Required("user_id"): vol.Any(str, None)})
+async def ws_ha_login_set_default(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Set the user all displays without their own pick log in as (None = the dedicated user)."""
+    manager = await async_get_ha_login_manager(hass)
+    await manager.async_set_default_user(msg["user_id"])
+    # displays without their own pick switch to the new user now
+    for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+        if is_panel_entry(entry) or (login := entry.runtime_data.ha_login) is None:
+            continue
+        if login.enabled:
+            entry.async_create_background_task(hass, login.async_check(force=True), f"{DOMAIN} dashboard login")
+    return {"default_user_id": manager.default_user_id}
+
+
+async def _ha_login_each(hass: HomeAssistant, entry_ids: list[str], login: bool) -> dict[str, Any]:
+    results: dict[str, Any] = {}
+    for entry_id in entry_ids:
+        try:
+            device = _device(hass, entry_id)
+            if device.ha_login is None:
+                results[entry_id] = {"ok": False, "status": "unsupported"}
+                continue
+            status = await (device.ha_login.async_login() if login else device.ha_login.async_logout())
+            results[entry_id] = {"ok": status in ("ok", "off"), "status": status}
+        except HomeAssistantError as err:
+            results[entry_id] = {"ok": False, "error": str(err)}
+    return {"results": results}
+
+
+@_cmd({vol.Required("type"): f"{DOMAIN}/ha_login/login", vol.Required("entry_ids"): [str]})
+async def ws_ha_login_login(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
+    """Log the dashboards of displays in (and keep them logged in)."""
+    return await _ha_login_each(hass, msg["entry_ids"], True)
+
+
+@_cmd({vol.Required("type"): f"{DOMAIN}/ha_login/logout", vol.Required("entry_ids"): [str]})
+async def ws_ha_login_logout(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
+    """Log the dashboards of displays out and stop logging them in."""
+    return await _ha_login_each(hass, msg["entry_ids"], False)
 
 
 # --------------------------------------------------------------------------- backups
@@ -547,6 +606,10 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
         ws_export,
         ws_copy,
         ws_command,
+        ws_ha_login_config,
+        ws_ha_login_set_default,
+        ws_ha_login_login,
+        ws_ha_login_logout,
         ws_backups_list,
         ws_backups_create,
         ws_backups_diff,

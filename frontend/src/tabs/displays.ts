@@ -3,7 +3,10 @@ import {
   mdiApplicationCogOutline,
   mdiBackupRestore,
   mdiCogs,
+  mdiAccountKeyOutline,
   mdiDotsVertical,
+  mdiLogin,
+  mdiLogout,
   mdiMenuDown,
   mdiOpenInNew,
   mdiPackageVariantClosedRemove,
@@ -15,7 +18,7 @@ import {
   mdiWhiteBalanceSunny,
 } from "@mdi/js";
 import { mdiShellyElevateDisplay } from "../icons";
-import { type DeviceSummary, ElevateApi, type Profile, deviceName, isLoaded } from "../api";
+import { type DeviceSummary, ElevateApi, type HaLoginStatus, type Profile, deviceName, isLoaded } from "../api";
 import {
   type DropdownSelectEvent,
   type FilterChangedEvent,
@@ -27,9 +30,21 @@ import {
 } from "../ha";
 import { type PageContext, pageStyles, renderPage, toolbarMenu } from "../page";
 import { sharedStyles } from "../styles";
-import { confirmDialog, define, openRevert, openTab, plural, stopPropagation, toast, toastError } from "../ui";
+import {
+  confirmDialog,
+  define,
+  openRevert,
+  openTab,
+  plural,
+  refreshDevices,
+  stopPropagation,
+  toast,
+  toastError,
+} from "../ui";
 import type { SeApplyProfileDialog } from "../components/apply-profile-dialog";
+import type { SeLoginDialog } from "../components/login-dialog";
 import "../components/apply-profile-dialog";
+import "../components/login-dialog";
 
 interface BulkAction {
   action: string;
@@ -58,6 +73,18 @@ const ACTIONS: BulkAction[] = [
     confirm: "The displays reboot and are offline for about a minute.",
   },
 ];
+
+const LOGIN_TEXT: Record<HaLoginStatus, string> = {
+  ok: "Logged in",
+  pending: "Pending",
+  invalid: "Refused",
+  off: "Off",
+  unsupported: "App too old",
+  no_dashboard: "No dashboard URL",
+  error: "Error",
+};
+
+const loginText = (d: DeviceSummary): string => (d.ha_login ? LOGIN_TEXT[d.ha_login] : "—");
 
 /** Config entry states as the integrations page names them. */
 const ENTRY_STATES: Record<string, string> = {
@@ -91,6 +118,7 @@ interface Row {
   firmware: string;
   host: string;
   status: string;
+  login: string;
   selectable: boolean;
   device: DeviceSummary;
 }
@@ -215,11 +243,64 @@ export class SeDisplaysTab extends LitElement {
     this.renderRoot.querySelector<SeApplyProfileDialog>("sep-apply-profile-dialog")?.show(undefined, [...this._selected]);
   }
 
+  /** Log the dashboards of the selected displays in or out of Home Assistant. */
+  private async _login(login: boolean): Promise<void> {
+    const ids = [...this._selected];
+    if (!ids.length) return;
+    const label = login ? "Log in to Home Assistant" : "Log out of Home Assistant";
+    if (!login) {
+      const ok = await confirmDialog(this, {
+        title: `Log ${plural(ids.length, "dashboard")} out?`,
+        text: "The displays show the login page and are no longer logged in by themselves.",
+        items: ids.map((id) => deviceName(this.devices, id)),
+        confirmText: "Log out",
+        destructive: true,
+      });
+      if (!ok) return;
+    }
+    this._busy = login ? "login" : "logout";
+    try {
+      const results = await this.api.haLogin(ids, login);
+      const failed = Object.entries(results).filter(([, r]) => !r.ok);
+      if (failed.length) {
+        toast(
+          this,
+          `${label}: ${ids.length - failed.length} succeeded, ${failed.length} failed`,
+          failed.length === ids.length ? "error" : "warning",
+          failed.map(
+            ([id, r]) => `${deviceName(this.devices, id)}: ${r.error ?? (r.status ? LOGIN_TEXT[r.status] : "failed")}`,
+          ),
+        );
+      } else {
+        toast(this, `${label}: done on ${plural(ids.length, "display")}`, "success");
+      }
+    } catch (err) {
+      toastError(this, `${label} failed`, err);
+    } finally {
+      this._busy = "";
+      refreshDevices(this);
+    }
+  }
+
   private _onBulkSelect(ev: DropdownSelectEvent): void {
     const value = ev.detail.item.value;
     const action = ACTIONS.find((a) => a.action === value);
     if (action) this._run(action);
     else if (value === "profile") this._applyProfile();
+    else if (value === "login") this._login(true);
+    else if (value === "logout") this._login(false);
+  }
+
+  private _menu() {
+    return {
+      items: html`<ha-dropdown-item value="ha_login">
+        <ha-svg-icon slot="icon" .path=${mdiAccountKeyOutline}></ha-svg-icon>
+        Dashboard login…
+      </ha-dropdown-item>`,
+      onSelect: (value: string) => {
+        if (value === "ha_login") this.renderRoot.querySelector<SeLoginDialog>("sep-login-dialog")?.show();
+      },
+    };
   }
 
   private _onRowMenu(d: DeviceSummary, ev: DropdownSelectEvent): void {
@@ -307,6 +388,7 @@ export class SeDisplaysTab extends LitElement {
         minWidth: "120px",
         template: (row: Row) => this._status(row.device),
       },
+      login: { title: "Dashboard login", sortable: true, groupable: true, minWidth: "120px" },
       actions: {
         title: "",
         type: "overflow-menu",
@@ -326,6 +408,7 @@ export class SeDisplaysTab extends LitElement {
       firmware: d.fw_version ?? "—",
       host: d.host ?? "—",
       status: statusText(d),
+      login: loginText(d),
       selectable: isLoaded(d),
       device: d,
     }));
@@ -345,11 +428,19 @@ export class SeDisplaysTab extends LitElement {
     const profile = html`<ha-dropdown-item value="profile">
       <ha-svg-icon slot="icon" .path=${mdiCogs}></ha-svg-icon>Apply profile…
     </ha-dropdown-item>`;
+    const login = html`<ha-dropdown-item value="login">
+        <ha-svg-icon slot="icon" .path=${mdiLogin}></ha-svg-icon>Log in to Home Assistant
+      </ha-dropdown-item>
+      <ha-dropdown-item value="logout" variant="danger">
+        <ha-svg-icon slot="icon" .path=${mdiLogout}></ha-svg-icon>Log out of Home Assistant
+      </ha-dropdown-item>`;
     if (this.narrow) {
       return html`<ha-dropdown slot="selection-bar" @wa-select=${this._onBulkSelect}>
         ${chip("Actions")} ${commands}
         <wa-divider></wa-divider>
         ${profile}
+        <wa-divider></wa-divider>
+        ${login}
       </ha-dropdown>`;
     }
     return html`
@@ -357,6 +448,8 @@ export class SeDisplaysTab extends LitElement {
       <ha-dropdown slot="selection-bar" @wa-select=${this._onBulkSelect}>
         <ha-icon-button slot="trigger" .label=${"More actions"} .path=${mdiDotsVertical} ?disabled=${busy}></ha-icon-button>
         ${profile}
+        <wa-divider></wa-divider>
+        ${login}
       </ha-dropdown>
     `;
   }
@@ -437,16 +530,17 @@ export class SeDisplaysTab extends LitElement {
         </ha-card>
       </div>
     `;
-    return renderPage(this, this.page, content, this._fab());
+    return renderPage(this, this.page, content, this._fab(), this._menu());
   }
 
   render() {
     if (!this.page) return nothing;
     const dialog = html`<sep-apply-profile-dialog
-      .api=${this.api}
-      .devices=${this.devices}
-      .profiles=${this._profiles}
-    ></sep-apply-profile-dialog>`;
+        .api=${this.api}
+        .devices=${this.devices}
+        .profiles=${this._profiles}
+      ></sep-apply-profile-dialog>
+      <sep-login-dialog .api=${this.api} @saved=${() => refreshDevices(this)}></sep-login-dialog>`;
     if (!isDefined("hass-tabs-subpage-data-table")) return html`${this._renderFallback()}${dialog}`;
     return html`
       <hass-tabs-subpage-data-table
@@ -483,7 +577,7 @@ export class SeDisplaysTab extends LitElement {
           else navigate("/config/integrations/integration/shellyelevateintegration");
         }}
       >
-        ${toolbarMenu(this)} ${this._filterPane()} ${this._selectionBar()} ${this.devices.length ? nothing : this._empty()}
+        ${toolbarMenu(this, this._menu())} ${this._filterPane()} ${this._selectionBar()} ${this.devices.length ? nothing : this._empty()}
         ${this._fab()}
       </hass-tabs-subpage-data-table>
       ${dialog}

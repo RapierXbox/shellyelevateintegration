@@ -107,7 +107,9 @@
           "update_channel": "Update channel",
           "adb": "Use ADB (port 5555)",
           "watchdog": "Restart the app automatically when it stops responding",
-          "thermostat": "Create a thermostat"
+          "thermostat": "Create a thermostat",
+          "ha_login": "Log the dashboard into Home Assistant",
+          "ha_login_user": "Log in as"
         },
         "data_description": {
           "auto_backup": "Takes a snapshot of the display settings after every change.",
@@ -116,7 +118,9 @@
           "thermostat": "Creates a thermostat entity that switches a relay of the display based on the temperature.",
           "backup_keep": "Older automatic backups are removed first; named backups are kept longest.",
           "relays_as_lights": "Creates the relays as light entities instead of switches.",
-          "update_channel": "Beta also offers pre-releases of the ShellyElevate app."
+          "update_channel": "Beta also offers pre-releases of the ShellyElevate app.",
+          "ha_login": "The display gets its own login and never shows the login page. Turning this off logs the dashboard out.",
+          "ha_login_user": "Empty uses the default of the Shelly Elevate panel: the non-admin, local-only user “Shelly Elevate” unless another user was picked there."
         }
       },
       "thermostat": {
@@ -620,6 +624,9 @@
     },
     "apk_too_large": {
       "message": "The app download is larger than allowed."
+    },
+    "ha_login_user_invalid": {
+      "message": "User {user} cannot be used for the dashboard login: it does not exist, is inactive or is a system user."
     }
   },
   "services": {

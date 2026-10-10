@@ -22,6 +22,32 @@ export interface DeviceSummary {
   capabilities?: Capabilities;
   /** Config entry state, only present when the entry is not loaded. */
   state?: string;
+  /** Dashboard login (see ha_login.py); null on the legacy app. */
+  ha_login?: HaLoginStatus | null;
+}
+
+export type HaLoginStatus = "ok" | "pending" | "invalid" | "off" | "unsupported" | "no_dashboard" | "error";
+
+export interface HaLoginUser {
+  id: string;
+  name: string;
+  admin: boolean;
+  local_only: boolean;
+  /** The user the integration created for the displays. */
+  dedicated: boolean;
+}
+
+export interface HaLoginConfig {
+  /** User all displays without their own pick log in as; null = the dedicated user. */
+  default_user_id: string | null;
+  dedicated_user_id: string | null;
+  users: HaLoginUser[];
+}
+
+export interface HaLoginResult {
+  ok: boolean;
+  status?: HaLoginStatus;
+  error?: string;
 }
 
 export const isLoaded = (device: DeviceSummary): boolean => device.state === undefined;
@@ -341,6 +367,22 @@ export class ElevateApi {
     return (
       await this.ws<{ results: Record<string, CommandResult> }>("command", { entry_ids: entryIds, action, params })
     ).results;
+  }
+
+  // dashboard login
+  haLoginConfig(): Promise<HaLoginConfig> {
+    return this.ws("ha_login/config");
+  }
+
+  haLoginSetDefault(userId: string | null): Promise<{ default_user_id: string | null }> {
+    return this.ws("ha_login/set_default", { user_id: userId });
+  }
+
+  /** Log the dashboards in (`login`) or out; keyed by entry id. */
+  async haLogin(entryIds: string[], login: boolean): Promise<Record<string, HaLoginResult>> {
+    return (await this.ws<{ results: Record<string, HaLoginResult> }>(login ? "ha_login/login" : "ha_login/logout", {
+      entry_ids: entryIds,
+    })).results;
   }
 
   // backups

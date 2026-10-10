@@ -59,6 +59,8 @@ from .const import (
     OPT_ADB,
     OPT_AUTO_BACKUP,
     OPT_BACKUP_KEEP,
+    OPT_HA_LOGIN,
+    OPT_HA_LOGIN_USER,
     OPT_RELAYS_AS_LIGHTS,
     OPT_THERMOSTAT,
     OPT_THERMOSTAT_MAX_TEMP,
@@ -592,6 +594,9 @@ class ShellyElevateIntegrationOptionsFlow(OptionsFlowWithReload):
         errors: dict[str, str] = {}
         if user_input is not None:
             self._options = {**self.config_entry.options, **user_input}
+            if not user_input.get(OPT_HA_LOGIN_USER):
+                # cleared = the default user of the panel
+                self._options.pop(OPT_HA_LOGIN_USER, None)
             if not user_input.get(OPT_THERMOSTAT):
                 return self.async_create_entry(data=self._options)
             if (caps := self._capabilities()) is not None and caps.relays == 0:
@@ -618,6 +623,17 @@ class ShellyElevateIntegrationOptionsFlow(OptionsFlowWithReload):
                     default=bool(self.config_entry.runtime_data.settings.get("adbWifiEnabled")) if loaded else False,
                 ): bool,
                 vol.Required(OPT_WATCHDOG, default=False): bool,
+                vol.Required(OPT_HA_LOGIN, default=True): bool,
+                vol.Optional(OPT_HA_LOGIN_USER): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=user.id, label=user.name or user.id)
+                            for user in await self.hass.auth.async_get_users()
+                            if user.is_active and not user.system_generated
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
             }
         )
         return self.async_show_form(

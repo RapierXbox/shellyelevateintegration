@@ -107,7 +107,9 @@
           "update_channel": "Update-Kanal",
           "adb": "ADB verwenden (Port 5555)",
           "watchdog": "App automatisch neu starten, wenn sie nicht mehr reagiert",
-          "thermostat": "Thermostat erstellen"
+          "thermostat": "Thermostat erstellen",
+          "ha_login": "Dashboard bei Home Assistant anmelden",
+          "ha_login_user": "Anmelden als"
         },
         "data_description": {
           "auto_backup": "Erstellt nach jeder Änderung eine Momentaufnahme der Display-Einstellungen.",
@@ -116,7 +118,9 @@
           "thermostat": "Erstellt eine Thermostat-Entität, die ein Relais des Displays nach der Temperatur schaltet.",
           "backup_keep": "Ältere automatische Sicherungen werden zuerst entfernt; benannte Sicherungen werden am längsten aufbewahrt.",
           "relays_as_lights": "Erstellt die Relais als Licht-Entitäten statt als Schalter.",
-          "update_channel": "Beta bietet auch Vorabversionen der ShellyElevate-App an."
+          "update_channel": "Beta bietet auch Vorabversionen der ShellyElevate-App an.",
+          "ha_login": "Das Display bekommt eine eigene Anmeldung und zeigt nie die Anmeldeseite. Ausschalten meldet das Dashboard ab.",
+          "ha_login_user": "Leer nutzt die Vorgabe aus dem Shelly-Elevate-Panel: den Benutzer „Shelly Elevate“ ohne Adminrechte und nur im lokalen Netz, außer dort wurde ein anderer Benutzer gewählt."
         }
       },
       "thermostat": {
@@ -620,6 +624,9 @@
     },
     "apk_too_large": {
       "message": "Der Download der App ist größer als erlaubt."
+    },
+    "ha_login_user_invalid": {
+      "message": "Benutzer {user} kann nicht für die Dashboard-Anmeldung genutzt werden: Er existiert nicht, ist inaktiv oder ist ein Systembenutzer."
     }
   },
   "services": {
