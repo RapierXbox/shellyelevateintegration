@@ -174,6 +174,21 @@ async def test_pipeline_events(hass: HomeAssistant, voice_display: FakeDisplay) 
     await _settle()
 
 
+async def test_duplicate_wake_goes_idle(hass: HomeAssistant, voice_display: FakeDisplay) -> None:
+    """A wake word another satellite already answered is no error on this display."""
+    satellite = _satellite(hass)
+    with patch.object(ShellyElevateIntegrationAssistSatellite, "async_accept_pipeline_from_satellite"):
+        satellite._start_pipeline()
+        await hass.async_block_till_done()
+    satellite.on_pipeline_event(
+        PipelineEvent(PipelineEventType.ERROR, {"code": "duplicate_wake_up_detected", "message": "Duplicate"})
+    )
+    await _settle()
+    assert ("voice.stop_audio", {}) in voice_display.commands
+    assert ("voice.state", {"state": "idle"}) in voice_display.commands
+    assert not any(params.get("state") == "error" for _, params in voice_display.commands)
+
+
 async def test_announce(hass: HomeAssistant, voice_display: FakeDisplay) -> None:
     """An announcement plays on the display and finishes when the display says so."""
     satellite = _satellite(hass)

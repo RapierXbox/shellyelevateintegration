@@ -36,6 +36,8 @@ _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
 ANNOUNCE_TIMEOUT = 300
 AUDIO_QUEUE_SIZE = 256
+# the error code HA uses when another satellite already answered the same wake word
+DUPLICATE_WAKE_UP = "duplicate_wake_up_detected"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -252,7 +254,11 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
         elif event.type is PipelineEventType.ERROR:
             self._end_audio()
             self._send("voice.stop_audio")
-            self._send("voice.state", state="error", message=data.get("message"))
+            if data.get("code") == DUPLICATE_WAKE_UP:
+                # another satellite in the room answers this wake word, so this one just goes quiet
+                self._send("voice.state", state="idle")
+            else:
+                self._send("voice.state", state="error", message=data.get("message"))
         elif event.type is PipelineEventType.RUN_END:
             self._end_audio()
         self._sync_device_state()
