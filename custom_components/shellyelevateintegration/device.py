@@ -14,13 +14,13 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo as HADeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .api import ShellyElevateIntegrationApi, ShellyElevateIntegrationError
+from .api import DEFAULT_NAME, ShellyElevateIntegrationApi, ShellyElevateIntegrationError
 from .api.app_schema import app_schema
 from .api.base import base_url
 from .api.legacy_schema import LEGACY_CAPS, LEGACY_SCHEMA
 from .api.models import DeviceInfo, SettingDef, SettingsWrite
 from .api.visibility import VisibilityEvaluator, condition_holds
-from .const import DOMAIN, EVENT_SHELLY_ELEVATE, MANUFACTURER, SIGNAL_SETTINGS_CHANGED
+from .const import CONF_NAME, DOMAIN, EVENT_SHELLY_ELEVATE, MANUFACTURER, SIGNAL_SETTINGS_CHANGED
 from .features import FEATURE_KEYS, SCHEMA_LOADED
 
 if TYPE_CHECKING:
@@ -212,6 +212,7 @@ class ShellyElevateIntegrationDevice:
         registry = dr.async_get(self.hass)
         device = registry.async_get_or_create(config_entry_id=self.entry.entry_id, **self.device_info)
         self.device_entry_id = device.id
+        self._async_sync_title()
         if self.client.upgrade_available:
             self.entry.async_start_reauth(self.hass)
 
@@ -297,7 +298,25 @@ class ShellyElevateIntegrationDevice:
         if self.device_entry_id is None:
             return
         registry = dr.async_get(self.hass)
-        registry.async_update_device(self.device_entry_id, sw_version=self.info.fw_version)
+        registry.async_update_device(
+            self.device_entry_id, name=self.info.name or self.entry.title, sw_version=self.info.fw_version
+        )
+        self._async_sync_title()
+
+    @callback
+    def _async_sync_title(self) -> None:
+        """Follow the name set on the display unless the entry was renamed in Home Assistant."""
+        name = self.info.name
+        if self.legacy or not name or name == self.entry.title:
+            return
+        if (synced := self.entry.data.get(CONF_NAME)) is not None:
+            renamed = self.entry.title != synced
+        else:
+            # older entries were titled with the model name the app reported
+            renamed = not self.entry.title.startswith(DEFAULT_NAME)
+        if renamed:
+            return
+        self.hass.config_entries.async_update_entry(self.entry, title=name, data={**self.entry.data, CONF_NAME: name})
 
     # ---------------------------------------------------------------- actions
 

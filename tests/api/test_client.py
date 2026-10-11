@@ -490,18 +490,19 @@ async def test_websocket_send_fails(make_client: Any, app_server: AppServer) -> 
 
 
 async def test_hello_and_settings_refresh(make_client: Any, app_server: AppServer) -> None:
-    """A hello after a reconnect re-reads the settings; a new version or capabilities are reported."""
+    """A hello re-reads the settings; a new version, name or capabilities are reported."""
     messages: list[dict[str, Any]] = []
     client = make_client()
     client.subscribe_events(messages.append)
     await client.connect()
     await _until(lambda: app_server.websockets)
     app_server.settings["screenSaverDelay"] = 300
-    new_info = {**app_server.info, "fw": "3.26160.0900"}
+    new_info = {**app_server.info, "fw": "3.26160.0900", "name": "Kitchen"}
     await app_server.push({"type": "hello", "info": new_info})
     await _until(lambda: {"type": "settings_changed", "changes": {"screenSaverDelay": 300}} in messages)
     assert {"type": "_info_changed"} in messages
     assert client.info.fw_version == "3.26160.0900"
+    assert client.info.name == "Kitchen"
 
     # a reset to the default is read back instead of caching null
     messages.clear()

@@ -5,15 +5,16 @@ from __future__ import annotations
 from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.shellyelevateintegration.api import ShellyElevateIntegrationConnectionError
-from custom_components.shellyelevateintegration.const import DOMAIN
+from custom_components.shellyelevateintegration.const import CONF_NAME, DOMAIN
 
 from .common import FakeDisplay
 from .conftest import setup_entry
-from .const import OTHER_DEVICE_ID
+from .const import DEVICE_ID, OTHER_DEVICE_ID
 
 
 def _reauth(hass: HomeAssistant) -> bool:
@@ -121,3 +122,34 @@ async def test_fallback_rules_without_schema(
     assert device.schema is None
     assert device.visibility().definition("screenSaverDelay") is not None
     assert device.setting_visible("screenSaverDelay")
+
+
+def _device_name(hass: HomeAssistant, entry: MockConfigEntry) -> str | None:
+    device = dr.async_get(hass).async_get_device_by_identifier((DOMAIN, DEVICE_ID), entry.entry_id)
+    assert device is not None
+    return device.name
+
+
+async def test_name_change_followed(
+    hass: HomeAssistant, init_integration: MockConfigEntry, display: FakeDisplay
+) -> None:
+    """A name set on the display renames the device and the entry."""
+    for name in ("Kitchen", "Hall"):
+        display.client.info.name = name
+        display.client.push({"type": "_info_changed"})
+        await hass.async_block_till_done()
+        assert init_integration.title == name
+        assert init_integration.data[CONF_NAME] == name
+        assert _device_name(hass, init_integration) == name
+
+
+async def test_entry_renamed_in_home_assistant_kept(
+    hass: HomeAssistant, init_integration: MockConfigEntry, display: FakeDisplay
+) -> None:
+    """A title renamed in Home Assistant is not overwritten; the device still follows."""
+    hass.config_entries.async_update_entry(init_integration, title="Office")
+    display.client.info.name = "Kitchen"
+    display.client.push({"type": "_info_changed"})
+    await hass.async_block_till_done()
+    assert init_integration.title == "Office"
+    assert _device_name(hass, init_integration) == "Kitchen"

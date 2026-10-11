@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -49,6 +50,7 @@ from .const import (
     CONF_FINGERPRINT,
     CONF_LEGACY,
     CONF_MAC,
+    CONF_NAME,
     CONF_PANEL,
     CONF_TOKEN,
     DEFAULT_BACKUP_KEEP,
@@ -93,6 +95,7 @@ CONF_CODE = "code"
 STOCK_SERVICE_TYPE = "_shelly._tcp.local."
 CONF_PROFILE = "profile"
 NO_PROFILE = "__none__"
+DEVICE_NAME_KEY = "deviceName"
 
 
 class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -344,7 +347,7 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 if self.source == SOURCE_REAUTH:
                     return self._async_finish_reauth()
-                return await self.async_step_profile()
+                return await self.async_step_name()
         if self._pairing_id is None:
             try:
                 self._pairing_id = await async_pair_start(
@@ -382,6 +385,41 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
         self._hello, self._port = hello, hello.port
         return None
 
+    async def async_step_name(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Ask for a name when none is set on the display yet."""
+        assert self._hello is not None
+        errors: dict[str, str] = {}
+        client = self._client()
+        if user_input is not None:
+            name = user_input[CONF_NAME].strip()
+            if not name:
+                errors[CONF_NAME] = "name_empty"
+            else:
+                try:
+                    await client.set_settings({DEVICE_NAME_KEY: name})
+                except ShellyElevateIntegrationError:
+                    errors["base"] = "cannot_connect"
+                else:
+                    self._hello = replace(self._hello, name=name)
+                    return await self.async_step_profile()
+        else:
+            try:
+                settings = await client.get_settings()
+            except ShellyElevateIntegrationError as err:
+                _LOGGER.debug("Could not read the settings of %s: %s", self._host, err)
+                return await self.async_step_profile()
+            # an older app has no name setting and a set one is kept
+            if not isinstance(current := settings.get(DEVICE_NAME_KEY), str) or current.strip():
+                return await self.async_step_profile()
+        return self.async_show_form(
+            step_id="name",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema({vol.Required(CONF_NAME): str}), user_input or {CONF_NAME: self._hello.name}
+            ),
+            errors=errors,
+            description_placeholders=self._placeholders(),
+        )
+
     async def async_step_profile(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Optionally apply a settings profile to the new display."""
         manager = await async_get_profile_manager(self.hass)
@@ -416,14 +454,7 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
     async def _async_apply_profile(self, profile_id: str) -> None:
         assert self._hello is not None
         manager = await async_get_profile_manager(self.hass)
-        session = async_get_clientsession(self.hass)
-        client: ShellyElevateIntegrationApi
-        if self._hello.legacy:
-            client = LegacyClient(session, self._host, self._port, self._hello.device_id)
-        else:
-            client = ShellyElevateIntegrationClient(
-                session, self._host, self._port, self._token or "", self._hello.fingerprint
-            )
+        client = self._client()
         # only keys this display knows like services.async_profile_diff
         known = set(await client.get_settings())
         schema: list[SettingDef] | None = None
@@ -439,6 +470,15 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
             await client.set_settings(changes)
             # the profile decides these so the first setup must not turn them on
             self._features_handled |= AUTO_FEATURES & set(changes)
+
+    def _client(self) -> ShellyElevateIntegrationApi:
+        assert self._hello is not None
+        session = async_get_clientsession(self.hass)
+        if self._hello.legacy:
+            return LegacyClient(session, self._host, self._port, self._hello.device_id)
+        return ShellyElevateIntegrationClient(
+            session, self._host, self._port, self._token or "", self._hello.fingerprint
+        )
 
     # ---------------------------------------------------------------- reauth / reconfigure
 
@@ -559,6 +599,7 @@ class ShellyElevateIntegrationConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_TOKEN: self._token,
             CONF_FINGERPRINT: self._hello.fingerprint,
             CONF_MAC: self._hello.mac,
+            CONF_NAME: self._hello.name,
             # media bluetooth and voice are turned on once on the first setup
             CONF_FEATURES_AUTO_ENABLED: False,
         }

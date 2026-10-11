@@ -16,6 +16,16 @@
           "code": "The 6-digit code shown on the display. A new code is shown when it expires."
         }
       },
+      "name": {
+        "title": "Name {name}",
+        "description": "No name is set on the display yet. It is shown in Home Assistant and on the display.",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "Name of the display, for example the room it hangs in."
+        }
+      },
       "legacy_confirm": {
         "title": "Older ShellyElevate version",
         "description": "**{name}** ({host}) runs an older ShellyElevate version without the native Home Assistant API. It can be added with basic features (relays, sensors, settings, media playback without status), but its HTTP API has no authentication. Update the app later to get push updates, the voice assistant and the Bluetooth proxy."
@@ -79,7 +89,8 @@
       "invalid_code": "Invalid pairing code. Check the code shown on the display.",
       "pairing_expired": "The code expired. A new code is now shown on the display.",
       "rate_limited": "Too many pairing attempts. Wait a minute, then try again.",
-      "profile_failed": "The profile could not be applied."
+      "profile_failed": "The profile could not be applied.",
+      "name_empty": "Enter a name."
     },
     "abort": {
       "already_configured": "This display is already configured.",

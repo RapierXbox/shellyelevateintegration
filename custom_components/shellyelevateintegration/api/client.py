@@ -606,6 +606,7 @@ class ShellyElevateIntegrationClient(ShellyElevateIntegrationApi):
                 self.info = _with_transport_caps(new)
                 if old is not None and (
                     new.fw_version != old.fw_version
+                    or new.name != old.name
                     or new.capabilities != old.capabilities
                     or new.reported_capabilities != old.reported_capabilities
                 ):

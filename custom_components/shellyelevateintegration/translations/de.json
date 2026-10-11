@@ -16,6 +16,16 @@
           "code": "Der 6-stellige Code auf dem Display. Läuft er ab, wird ein neuer angezeigt."
         }
       },
+      "name": {
+        "title": "{name} benennen",
+        "description": "Auf dem Display ist noch kein Name gesetzt. Er wird in Home Assistant und auf dem Display angezeigt.",
+        "data": {
+          "name": "Name"
+        },
+        "data_description": {
+          "name": "Name des Displays, zum Beispiel der Raum, in dem es hängt."
+        }
+      },
       "legacy_confirm": {
         "title": "Ältere ShellyElevate-Version",
         "description": "**{name}** ({host}) läuft mit einer älteren ShellyElevate-Version ohne native Home Assistant-API. Das Gerät kann mit Grundfunktionen hinzugefügt werden (Relais, Sensoren, Einstellungen, Medienwiedergabe ohne Status), aber seine HTTP-API hat keine Authentifizierung. Aktualisiere die App später, um Push-Updates, den Sprachassistenten und den Bluetooth-Proxy zu erhalten."
@@ -79,7 +89,8 @@
       "invalid_code": "Ungültiger Kopplungscode. Prüfe den Code auf dem Display.",
       "pairing_expired": "Der Code ist abgelaufen. Auf dem Display wird jetzt ein neuer Code angezeigt.",
       "rate_limited": "Zu viele Kopplungsversuche. Warte eine Minute und versuche es dann erneut.",
-      "profile_failed": "Das Profil konnte nicht angewendet werden."
+      "profile_failed": "Das Profil konnte nicht angewendet werden.",
+      "name_empty": "Gib einen Namen ein."
     },
     "abort": {
       "already_configured": "Dieses Display ist bereits eingerichtet.",

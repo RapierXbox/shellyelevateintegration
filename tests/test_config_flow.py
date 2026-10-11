@@ -28,6 +28,7 @@ from custom_components.shellyelevateintegration.api import (
 from custom_components.shellyelevateintegration.config_flow import (
     CONF_CODE,
     CONF_PROFILE,
+    DEVICE_NAME_KEY,
     NO_PROFILE,
 )
 from custom_components.shellyelevateintegration.const import (
@@ -37,6 +38,7 @@ from custom_components.shellyelevateintegration.const import (
     CONF_FINGERPRINT,
     CONF_LEGACY,
     CONF_MAC,
+    CONF_NAME,
     CONF_PANEL,
     CONF_TOKEN,
     DOMAIN,
@@ -196,6 +198,7 @@ async def test_manual_display_success(
         CONF_TOKEN: TOKEN,
         CONF_FINGERPRINT: FINGERPRINT,
         CONF_MAC: MAC,
+        CONF_NAME: TITLE,
         CONF_FEATURES_AUTO_ENABLED: False,
     }
     assert result["result"].unique_id == DEVICE_ID
@@ -322,6 +325,55 @@ async def test_manual_v1_display_does_not_move_legacy_entry(
 async def _at_pair(hass: HomeAssistant) -> dict[str, Any]:
     result = await _start_user(hass)
     return await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: HOST, CONF_PORT: PORT})
+
+
+async def test_name_asked_when_unset(
+    hass: HomeAssistant, panel: MockConfigEntry, display: FakeDisplay, flow_mocks: dict
+) -> None:
+    """A display without a name gets the one entered after pairing."""
+    display.settings[DEVICE_NAME_KEY] = ""
+    result = await _pair(hass, await _at_pair(hass))
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "name"
+    suggested = next(iter(result["data_schema"].schema)).description
+    assert suggested == {"suggested_value": TITLE}
+
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_NAME: "  "})
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_NAME: "name_empty"}
+
+    display.set_settings_error = ShellyElevateIntegrationConnectionError("reset")
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_NAME: "Kitchen"})
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+
+    display.set_settings_error = None
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_NAME: " Kitchen "})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Kitchen"
+    assert result["data"][CONF_NAME] == "Kitchen"
+    assert display.settings[DEVICE_NAME_KEY] == "Kitchen"
+
+
+async def test_name_kept_when_set(
+    hass: HomeAssistant, panel: MockConfigEntry, display: FakeDisplay, flow_mocks: dict
+) -> None:
+    """A name set on the display is not asked for again."""
+    display.settings[DEVICE_NAME_KEY] = "Hall"
+    result = await _pair(hass, await _at_pair(hass))
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert not display.writes
+
+
+async def test_name_step_skipped_when_settings_fail(
+    hass: HomeAssistant, panel: MockConfigEntry, display: FakeDisplay, flow_mocks: dict
+) -> None:
+    """Unreadable settings do not block adding the display."""
+    display.settings[DEVICE_NAME_KEY] = ""
+    display.settings_error = ShellyElevateIntegrationConnectionError("reset")
+    result = await _pair(hass, await _at_pair(hass))
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == TITLE
 
 
 @pytest.mark.parametrize(
