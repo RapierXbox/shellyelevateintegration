@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from homeassistant.components.notify import NotifyEntity, NotifyEntityDescription
-from homeassistant.components.notify.const import NotifyEntityFeature
+from homeassistant.components.notify import (  # type: ignore[attr-defined]  # .const is 2026.10+
+    NotifyEntity,
+    NotifyEntityDescription,
+    NotifyEntityFeature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 

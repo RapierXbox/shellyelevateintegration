@@ -5,8 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from homeassistant.components.light import LightEntity, LightEntityDescription
-from homeassistant.components.light.const import ATTR_BRIGHTNESS, ATTR_EFFECT, ColorMode, LightEntityFeature
+from homeassistant.components.light import (  # type: ignore[attr-defined]  # .const is 2026.10+
+    ATTR_BRIGHTNESS,
+    ATTR_EFFECT,
+    ColorMode,
+    LightEntity,
+    LightEntityDescription,
+    LightEntityFeature,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 

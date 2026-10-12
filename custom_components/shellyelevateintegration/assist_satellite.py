@@ -16,8 +16,11 @@ import logging
 from typing import Any
 
 from homeassistant.components import assist_satellite
-from homeassistant.components.assist_pipeline import PipelineEvent, PipelineEventType
-from homeassistant.components.assist_pipeline.models import PipelineStage
+from homeassistant.components.assist_pipeline import (  # type: ignore[attr-defined]  # .models is 2026.10+
+    PipelineEvent,
+    PipelineEventType,
+    PipelineStage,
+)
 from homeassistant.components.assist_satellite.entity import AssistSatelliteState
 from homeassistant.components.intent import TimerEventType, TimerInfo, async_register_timer_handler
 from homeassistant.components.media_player.browse_media import async_process_play_media_url

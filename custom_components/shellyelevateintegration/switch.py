@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any
 
-from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
-from homeassistant.components.switch.const import SwitchDeviceClass
+from homeassistant.components.switch import (  # type: ignore[attr-defined]  # .const is 2026.10+
+    SwitchDeviceClass,
+    SwitchEntity,
+    SwitchEntityDescription,
+)
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
