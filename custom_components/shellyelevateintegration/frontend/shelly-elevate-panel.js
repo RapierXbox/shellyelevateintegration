@@ -1559,6 +1559,17 @@ var e=globalThis,t=e.ShadowRoot&&(e.ShadyCSS===void 0||e.ShadyCSS.nativeShadow)&
       ${Z(this,this.page,g`<div class="content">${this._renderContent()}</div>`,e,{onReload:()=>{this._load()}})}
       ${this._renderDialog()}
     `}};E(qr,`properties`,{page:{attribute:!1},api:{attribute:!1},devices:{attribute:!1},entryId:{},narrow:{type:Boolean,reflect:!0},_lists:{state:!0},_recent:{state:!0},_loading:{state:!0},_error:{state:!0},_dialog:{state:!0},_dialogOpen:{state:!0},_busy:{state:!0}}),E(qr,`styles`,[B,Q,qn,V,o`
+      /* room under the display picker and above the card edge */
+      .card-content.list > ha-alert {
+        margin-top: var(--ha-space-2);
+        margin-bottom: var(--ha-space-4);
+      }
+      .card-content.list > p:last-child {
+        margin-bottom: var(--ha-space-4);
+      }
+      ha-alert ha-button {
+        white-space: nowrap;
+      }
       .progress {
         display: flex;
         gap: var(--ha-space-4);

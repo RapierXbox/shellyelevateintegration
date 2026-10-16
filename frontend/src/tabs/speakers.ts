@@ -499,6 +499,17 @@ export class SeSpeakersTab extends LitElement {
     listCardStyles,
     dialogStyles,
     css`
+      /* room under the display picker and above the card edge */
+      .card-content.list > ha-alert {
+        margin-top: var(--ha-space-2);
+        margin-bottom: var(--ha-space-4);
+      }
+      .card-content.list > p:last-child {
+        margin-bottom: var(--ha-space-4);
+      }
+      ha-alert ha-button {
+        white-space: nowrap;
+      }
       .progress {
         display: flex;
         gap: var(--ha-space-4);
