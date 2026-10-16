@@ -196,6 +196,8 @@ class SettingDef:
     """Never shown in an editor."""
     read_only: bool = False
     """Shown but not editable."""
+    accept: str | None = None
+    """Mime filter of a setting that holds an uploaded file (the value is its name, set by `settings.file`)."""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SettingDef:

@@ -31,6 +31,7 @@ _MQTT = [_eq("mqttEnabled", True)]
 _VOICE = _eq("haVoiceEnabled", True)
 _WAKE = _eq("voiceWakeEnabled", True)
 _SPEAKER = _eq("speakerIdEnabled", True)
+_THINKING = _eq("voiceThinkingSound", True)
 _OFFSET = [_eq("dynamicTempOffsetEnabled", True)]
 _TEMPERATURE = [_cap("temperature")]
 
@@ -125,6 +126,10 @@ APP_RULES: list[dict[str, Any]] = [
     _r("voiceWakeSoundEnabled", "bool", True, visible_if=[_VOICE]),
     _r("voiceScoreBarEnabled", "bool", False, visible_if=[_VOICE, _WAKE]),
     _r("voiceWakeExperimentalModels", "bool", False, visible_if=[_VOICE, _WAKE]),
+    _r("voiceThinkingSound", "bool", False, visible_if=[_VOICE]),
+    _r("voiceThinkingSoundFile", "string", "", visible_if=[_VOICE, _THINKING], read_only=True, accept="audio/*"),
+    _r("voiceThinkingSoundLoop", "bool", True, visible_if=[_VOICE, _THINKING]),
+    _r("voiceThinkingSoundPitch", "int", 10, visible_if=[_VOICE, _THINKING]),
     _r("speakerIdEnabled", "bool", False, visible_if=[_VOICE]),
     _r("speakerIdModel", "enum", "b2", visible_if=[_VOICE, _SPEAKER]),
     _r("speakerIdStrictness", "int", 50, visible_if=[_VOICE, _SPEAKER]),

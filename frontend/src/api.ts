@@ -105,6 +105,8 @@ export interface SettingDef {
   requires?: Requirement[] | null;
   /** Never shown. */
   hidden?: boolean;
+  /** Mime filter of a setting that holds an uploaded file; its value is the file name. */
+  accept?: string | null;
   /** Shown but not editable. */
   read_only?: boolean;
 }

@@ -24,7 +24,21 @@ import {
 } from "../ha";
 import { type PageContext, type PageMenu, displayPicker, noDisplaysCard, pageStyles, renderPage } from "../page";
 import { dialogStyles, sharedStyles } from "../styles";
-import { confirmDialog, define, downloadJson, formatValue, plural, selectEntry, slug, toast, toastError } from "../ui";
+import {
+  confirmDialog,
+  define,
+  downloadJson,
+  formatValue,
+  pickFile,
+  plural,
+  selectEntry,
+  slug,
+  toast,
+  toastError,
+} from "../ui";
+
+/** the display takes at most 512 KB per file */
+const MAX_UPLOAD = 512 * 1024;
 import type { KeyOption } from "../components/key-picker";
 import "../components/key-picker";
 import { type Visibility, VisibilityEvaluator, visibilityHint } from "../visibility";
@@ -499,6 +513,7 @@ export class SeSettingsTab extends LitElement {
     const label = def.label ?? def.key;
     // read-only while the settings are (re)loaded: edits would be dropped by the load
     const disabled = this._loading || locked;
+    if (def.accept) return this._renderFile(def, String(value ?? ""), disabled);
     switch (def.type) {
       case "bool":
         return html`<ha-switch
@@ -585,7 +600,7 @@ export class SeSettingsTab extends LitElement {
     // only search results are rendered while not visible: they show why instead of a usable control
     const lockReason = !vis.visible
       ? visibilityHint(vis)
-      : (managed ?? (def.read_only ? "Read-only" : ""));
+      : (managed ?? (def.read_only && !def.accept ? "Read-only" : ""));
     return html`
       <ha-list-item-base class=${vis.visible ? "" : "unavailable"}>
         <span slot="headline">${def.label || def.key}</span>
@@ -599,6 +614,59 @@ export class SeSettingsTab extends LitElement {
         <div slot="end" class="end">${this._renderControl(def, !!lockReason)}</div>
       </ha-list-item-base>
     `;
+  }
+
+  /** A file setting: its name plus upload (to this or every display) and remove. */
+  private _renderFile(def: SettingDef, name: string, disabled: boolean) {
+    return html`<span class="file-name">${name || "None"}</span>
+      <ha-button appearance="plain" size="small" .disabled=${disabled} @click=${() => this._upload(def)}>Upload…</ha-button>
+      ${name
+        ? html`<ha-button appearance="plain" size="small" variant="danger" .disabled=${disabled} @click=${() => this._sendFile(def.key, [this.entryId], null)}
+            >Remove</ha-button
+          >`
+        : nothing}`;
+  }
+
+  private async _upload(def: SettingDef): Promise<void> {
+    const file = await pickFile(def.accept ?? "*/*");
+    if (!file) return;
+    if (file.size > MAX_UPLOAD) {
+      toast(this, `${file.name} is larger than 512 KB`, "error");
+      return;
+    }
+    const others = this.devices.filter((d) => isLoaded(d) && d.available && d.entry_id !== this.entryId);
+    const everywhere =
+      others.length > 0 &&
+      (await confirmDialog(this, {
+        title: `Use ${file.name} on all displays?`,
+        text: `Also upload it to ${plural(others.length, "other display")}.`,
+        confirmText: "All displays",
+        dismissText: "Only this one",
+      }));
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const targets = [this.entryId, ...(everywhere ? others.map((d) => d.entry_id) : [])];
+    await this._sendFile(def.key, targets, { name: file.name, data: btoa(binary) });
+  }
+
+  private async _sendFile(key: string, targets: string[], file: { name: string; data: string } | null): Promise<void> {
+    try {
+      const results = await this.api.command(targets, "settings.file", {
+        key,
+        name: file?.name ?? "",
+        data_b64: file?.data ?? null,
+      });
+      const failed = Object.entries(results).filter(([, r]) => !r.ok);
+      if (failed.length) {
+        toast(this, `Failed on ${plural(failed.length, "display")}`, "error", failed.map(([id, r]) => `${deviceName(this.devices, id)}: ${r.error}`));
+      } else {
+        toast(this, file ? `Uploaded to ${plural(targets.length, "display")}` : "Removed", "success");
+      }
+    } catch (err) {
+      toastError(this, "Upload failed", err);
+    }
+    await this._load();
   }
 
   private _renderRows(defs: SettingDef[], ev: VisibilityEvaluator) {
@@ -948,6 +1016,13 @@ export class SeSettingsTab extends LitElement {
       }
       .end ha-select {
         min-width: 210px;
+      }
+      .file-name {
+        max-width: 160px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--secondary-text-color);
       }
       .end ha-input {
         width: 210px;
