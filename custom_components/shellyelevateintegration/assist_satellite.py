@@ -329,6 +329,10 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
                 self._send("voice.state", state="error", message=data.get("message"))
         elif event.type is PipelineEventType.RUN_END:
             self._end_audio()
+        if event.type is PipelineEventType.RUN_START:
+            # the display already listens since it sent voice.wake, the entity stays idle until stt-start.
+            # a sync now sends idle when the entity is new (first wake after a restart) and ends the capture
+            return
         self._sync_device_state()
 
     @callback
