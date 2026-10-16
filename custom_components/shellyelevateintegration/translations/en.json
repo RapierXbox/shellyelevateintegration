@@ -349,6 +349,17 @@
       },
       "swipe": {
         "name": "Swipe"
+      },
+      "speaker": {
+        "name": "Speaker",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "identified": "Identified",
+              "unknown": "Unknown"
+            }
+          }
+        }
       }
     },
     "image": {
@@ -462,6 +473,12 @@
           "error": "Error",
           "disabled": "Disabled"
         }
+      },
+      "last_speaker": {
+        "name": "Last speaker"
+      },
+      "speaker_confidence": {
+        "name": "Speaker confidence"
       }
     },
     "switch": {
@@ -512,6 +529,9 @@
       },
       "legacy_http_api": {
         "name": "Legacy HTTP API"
+      },
+      "speaker_recognition": {
+        "name": "Speaker recognition"
       }
     },
     "text": {
@@ -638,6 +658,9 @@
     },
     "ha_login_user_invalid": {
       "message": "User {user} cannot be used for the dashboard login: it does not exist, is inactive or is a system user."
+    },
+    "unknown_speaker": {
+      "message": "The speaker is not on the source display."
     }
   },
   "services": {

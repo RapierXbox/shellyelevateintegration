@@ -20,7 +20,7 @@ from .api.base import base_url
 from .api.legacy_schema import LEGACY_CAPS, LEGACY_SCHEMA
 from .api.models import DeviceInfo, SettingDef, SettingsWrite
 from .api.visibility import VisibilityEvaluator, condition_holds
-from .const import CONF_NAME, DOMAIN, EVENT_SHELLY_ELEVATE, MANUFACTURER, SIGNAL_SETTINGS_CHANGED
+from .const import CONF_NAME, DOMAIN, EVENT_SHELLY_ELEVATE, MANUFACTURER, SIGNAL_SETTINGS_CHANGED, SIGNAL_SPEAKER
 from .features import FEATURE_KEYS, SCHEMA_LOADED
 
 if TYPE_CHECKING:
@@ -165,6 +165,11 @@ class ShellyElevateIntegrationDevice:
         return self.voice_enabled and not self.legacy and self.setting_on("haVoiceEnabled")
 
     @property
+    def speaker_active(self) -> bool:
+        """Speaker recognition is switched on on a voice display."""
+        return self.voice_active and self.setting_on("speakerIdEnabled")
+
+    @property
     def media_active(self) -> bool:
         """Media playback is switched on (the legacy app plays without the setting)."""
         if not self.info.capabilities.speaker:
@@ -255,6 +260,8 @@ class ShellyElevateIntegrationDevice:
                 EVENT_SHELLY_ELEVATE,
                 {"device_id": self.device_entry_id, "entry_id": self.entry.entry_id, **message},
             )
+        if message.get("type") == "speaker.enroll" or message.get("event") == "speaker":
+            async_dispatcher_send(self.hass, SIGNAL_SPEAKER.format(self.entry.entry_id), message)
         elif message.get("type") in ("_auth_failed", "_upgrade_available"):
             # The upgrade from the legacy app reuses the reauth flow: pair, then switch to v1.
             self.entry.async_start_reauth(self.hass)

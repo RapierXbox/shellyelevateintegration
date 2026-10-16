@@ -1,4 +1,4 @@
-"""Event entities: physical buttons, wired inputs, power button, swipe gestures."""
+"""Event entities: physical buttons, wired inputs, power button, swipe gestures, speakers."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ def _swipe_type(direction: str, fingers: int) -> str:
 SWIPE_SETTING = "publishSwipeEvents"
 
 PRESS_TYPES = ["single", "double", "triple", "long"]
+SPEAKER_TYPES = ["identified", "unknown"]
 SWIPE_TYPES = [
     _swipe_type(direction, fingers) for fingers in (1, 2, 3, 4, 5) for direction in ("up", "down", "left", "right")
 ]
@@ -55,6 +56,8 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[EventEntity]
         entities.append(ShellyElevateIntegrationButtonEvent(device, "power_button", None))
     # publishSwipeEvents only makes it unavailable (see features.py)
     entities.append(ShellyElevateIntegrationSwipeEvent(device))
+    if device.speaker_active:
+        entities.append(ShellyElevateIntegrationSpeakerEvent(device))
     return entities
 
 
@@ -117,6 +120,22 @@ class ShellyElevateIntegrationButtonEvent(_ShellyElevateIntegrationEvent):
             return None
         press = message.get("press", "single")
         return press if press in PRESS_TYPES else None
+
+
+class ShellyElevateIntegrationSpeakerEvent(_ShellyElevateIntegrationEvent):
+    """A voice command was spoken by a known or an unknown speaker."""
+
+    _attr_event_types = SPEAKER_TYPES
+
+    def __init__(self, device: ShellyElevateIntegrationDevice) -> None:
+        """Initialize."""
+        super().__init__(device, ShellyElevateIntegrationEventDescription(key="speaker", translation_key="speaker"))
+
+    def _match(self, message: dict[str, Any]) -> str | None:
+        if message.get("event") != "speaker":
+            return None
+        status = message.get("status")
+        return status if status in SPEAKER_TYPES else None
 
 
 class ShellyElevateIntegrationSwipeEvent(_ShellyElevateIntegrationEvent):

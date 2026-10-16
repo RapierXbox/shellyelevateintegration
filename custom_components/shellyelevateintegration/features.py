@@ -62,6 +62,7 @@ FEATURE_KEYS: Final = frozenset(
         "displayModule",
         "mediaEnabled",
         "haVoiceEnabled",
+        "speakerIdEnabled",
         "bleScannerEnabled",
         "mqttEnabled",
         # legacy app

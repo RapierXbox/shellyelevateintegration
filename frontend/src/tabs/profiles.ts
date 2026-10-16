@@ -21,7 +21,7 @@ import {
   isDefined,
   onDialogClosed,
 } from "../ha";
-import { type PageContext, type PageMenu, pageStyles, renderPage } from "../page";
+import { type PageContext, type PageMenu, listCardStyles, pageStyles, renderPage } from "../page";
 import { dialogStyles, sharedStyles } from "../styles";
 import {
   confirmDialog,
@@ -528,17 +528,9 @@ export class SeProfilesTab extends LitElement {
   static styles = [
     sharedStyles,
     pageStyles,
+    listCardStyles,
     dialogStyles,
     css`
-      /* ha-backup-overview-backups */
-      .card-content.list {
-        padding-left: 0;
-        padding-right: 0;
-      }
-      .card-content.list > p {
-        margin-left: var(--ha-space-4);
-        margin-right: var(--ha-space-4);
-      }
       /* assist-pref */
       ha-list-item-button span ha-svg-icon {
         color: currentColor;

@@ -349,6 +349,17 @@
       },
       "swipe": {
         "name": "Wischen"
+      },
+      "speaker": {
+        "name": "Sprecher",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "identified": "Erkannt",
+              "unknown": "Unbekannt"
+            }
+          }
+        }
       }
     },
     "image": {
@@ -462,6 +473,12 @@
           "error": "Fehler",
           "disabled": "Deaktiviert"
         }
+      },
+      "last_speaker": {
+        "name": "Letzter Sprecher"
+      },
+      "speaker_confidence": {
+        "name": "Sprecher-Konfidenz"
       }
     },
     "switch": {
@@ -512,6 +529,9 @@
       },
       "legacy_http_api": {
         "name": "Legacy-HTTP-API"
+      },
+      "speaker_recognition": {
+        "name": "Sprechererkennung"
       }
     },
     "text": {
@@ -638,6 +658,9 @@
     },
     "ha_login_user_invalid": {
       "message": "Benutzer {user} kann nicht für die Dashboard-Anmeldung genutzt werden: Er existiert nicht, ist inaktiv oder ist ein Systembenutzer."
+    },
+    "unknown_speaker": {
+      "message": "Der Sprecher ist auf dem Quell-Display nicht vorhanden."
     }
   },
   "services": {

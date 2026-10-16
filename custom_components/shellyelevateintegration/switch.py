@@ -58,6 +58,7 @@ SETTING_SWITCHES: tuple[ShellyElevateIntegrationSwitchDescription, ...] = (
     _setting_switch("voice_assistant", "haVoiceEnabled"),
     _setting_switch("voice_mute", "voiceAssistantMuted", config=False),
     _setting_switch("wake_word", "voiceWakeEnabled", enabled=False),
+    _setting_switch("speaker_recognition", "speakerIdEnabled"),
     _setting_switch("bluetooth_proxy", "bleScannerEnabled"),
     _setting_switch("media_enabled", "mediaEnabled"),
     _setting_switch("buttons_switch_relays", "buttonRelayEnabled", enabled=False),

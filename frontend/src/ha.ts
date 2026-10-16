@@ -202,6 +202,7 @@ export interface HomeAssistant {
   connection: HassConnection;
   locale?: { language?: string };
   themes?: { darkMode?: boolean };
+  states?: Record<string, { attributes: { friendly_name?: string } }>;
 }
 
 /** The `panel` property Home Assistant sets on a custom panel. */

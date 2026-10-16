@@ -3,7 +3,7 @@ import type { TemplateResult } from "lit";
 import { errorMessage } from "./api";
 import { fireEvent, showToast } from "./ha";
 
-export type TabId = "displays" | "install" | "settings" | "profiles" | "backups";
+export type TabId = "displays" | "install" | "settings" | "speakers" | "profiles" | "backups";
 
 export type ToastLevel = "info" | "success" | "warning" | "error";
 

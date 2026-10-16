@@ -13,7 +13,7 @@ import {
 } from "@mdi/js";
 import { type Backup, type DeviceSummary, type DiffItem, ElevateApi, errorMessage, isLoaded } from "../api";
 import { type DropdownSelectEvent, type SelectedEvent, inputValue, onDialogClosed } from "../ha";
-import { type PageContext, type PageMenu, displayPicker, noDisplaysCard, pageStyles, renderPage } from "../page";
+import { type PageContext, type PageMenu, displayPicker, listCardStyles, noDisplaysCard, pageStyles, renderPage } from "../page";
 import { dialogStyles, sharedStyles } from "../styles";
 import {
   confirmDialog,
@@ -506,34 +506,9 @@ export class SeBackupsTab extends LitElement {
   static styles = [
     sharedStyles,
     pageStyles,
+    listCardStyles,
     dialogStyles,
     css`
-      /* "My backups" with the display picker at the end of the header; the button overlaps the
-         header's padding so the header keeps the height of a plain one */
-      .card-header:has(.display-picker) {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: var(--ha-space-2);
-      }
-      .card-header .display-picker {
-        margin-block: calc((var(--ha-line-height-condensed) * var(--ha-font-size-2xl) - 40px) / 2);
-        font-size: var(--ha-font-size-m);
-        letter-spacing: normal;
-        line-height: normal;
-      }
-      .card-header > span {
-        min-width: 0;
-      }
-      /* ha-backup-overview-backups */
-      .card-content.list {
-        padding-left: 0;
-        padding-right: 0;
-      }
-      .card-content.list > p {
-        margin-left: var(--ha-space-4);
-        margin-right: var(--ha-space-4);
-      }
     `,
   ];
 }

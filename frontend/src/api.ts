@@ -167,6 +167,40 @@ export interface Backup {
   settings: Settings;
 }
 
+export interface Speaker {
+  id: string;
+  name: string;
+  person: string | null;
+  samples: { id: string; kind: "wake" | "free"; source: "enrolled" | "claimed" | "learned"; audio: boolean }[];
+}
+
+export interface SpeakerList {
+  enabled: boolean;
+  enrolling: boolean;
+  model: string;
+  speakers: Speaker[];
+}
+
+export interface RecentVoice {
+  session: number;
+  status: "identified" | "unknown";
+  best_guess: string | null;
+  score: number;
+  at: number;
+  text?: string;
+}
+
+/** Enrollment progress (`speaker.enroll`) or a recognised speaker (`event` "speaker"). */
+export interface SpeakerMessage {
+  type: string;
+  speaker_id?: string;
+  step?: number;
+  total?: number;
+  status?: string;
+  prompt?: string;
+  reason?: string;
+}
+
 export interface CommandResult {
   ok: boolean;
   data?: unknown;
@@ -366,6 +400,30 @@ export class ElevateApi {
   ): Promise<Record<string, CommandResult>> {
     return (
       await this.ws<{ results: Record<string, CommandResult> }>("command", { entry_ids: entryIds, action, params })
+    ).results;
+  }
+
+  // speakers (the speaker.* commands of a display run through `command`)
+  async speakerCommand<T>(entryId: string, action: string, params: Record<string, unknown> = {}): Promise<T> {
+    const result = (await this.command([entryId], action, params))[entryId];
+    if (!result?.ok) throw new Error(result?.error ?? "The display did not answer");
+    return result.data as T;
+  }
+
+  subscribeSpeakers(entryId: string, callback: (message: SpeakerMessage) => void): Promise<UnsubscribeFunc> {
+    return this.hass.connection.subscribeMessage<SpeakerMessage>(callback, {
+      type: `${PREFIX}/speakers/subscribe`,
+      entry_id: entryId,
+    });
+  }
+
+  async speakersCopy(source: string, speakerId: string, targets: string[]): Promise<Record<string, CommandResult>> {
+    return (
+      await this.ws<{ results: Record<string, CommandResult> }>("speakers/copy", {
+        source,
+        speaker_id: speakerId,
+        targets,
+      })
     ).results;
   }
 

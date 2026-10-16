@@ -46,6 +46,9 @@
       },
       "power_button": {
         "default": "mdi:power"
+      },
+      "speaker": {
+        "default": "mdi:account-voice"
       }
     },
     "image": {
@@ -115,6 +118,12 @@
       },
       "voice_state": {
         "default": "mdi:account-voice"
+      },
+      "last_speaker": {
+        "default": "mdi:account-voice"
+      },
+      "speaker_confidence": {
+        "default": "mdi:account-check"
       }
     },
     "switch": {
@@ -162,6 +171,9 @@
       },
       "legacy_http_api": {
         "default": "mdi:api"
+      },
+      "speaker_recognition": {
+        "default": "mdi:account-voice"
       }
     },
     "text": {

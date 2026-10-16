@@ -30,6 +30,7 @@ _SAVER = _eq("screenSaver", True)
 _MQTT = [_eq("mqttEnabled", True)]
 _VOICE = _eq("haVoiceEnabled", True)
 _WAKE = _eq("voiceWakeEnabled", True)
+_SPEAKER = _eq("speakerIdEnabled", True)
 _OFFSET = [_eq("dynamicTempOffsetEnabled", True)]
 _TEMPERATURE = [_cap("temperature")]
 
@@ -124,6 +125,10 @@ APP_RULES: list[dict[str, Any]] = [
     _r("voiceWakeSoundEnabled", "bool", True, visible_if=[_VOICE]),
     _r("voiceScoreBarEnabled", "bool", False, visible_if=[_VOICE, _WAKE]),
     _r("voiceWakeExperimentalModels", "bool", False, visible_if=[_VOICE, _WAKE]),
+    _r("speakerIdEnabled", "bool", False, visible_if=[_VOICE]),
+    _r("speakerIdModel", "enum", "b2", visible_if=[_VOICE, _SPEAKER]),
+    _r("speakerIdStrictness", "int", 50, visible_if=[_VOICE, _SPEAKER]),
+    _r("speakerIdLearn", "bool", True, visible_if=[_VOICE, _SPEAKER]),
     # bluetooth and media
     _r(
         "bleScannerEnabled",

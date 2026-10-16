@@ -335,3 +335,36 @@ export const pageStyles = css`
     z-index: 1;
   }
 `;
+
+/**
+ * Cards whose content is a list (ha-backup-overview-backups): the rows bring their own padding,
+ * text above them keeps the card's. A header can end with the display picker, which overlaps the
+ * header's padding so the header keeps the height of a plain one.
+ */
+export const listCardStyles = css`
+  .card-header:has(.display-picker) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ha-space-2);
+  }
+  .card-header .display-picker {
+    margin-block: calc((var(--ha-line-height-condensed) * var(--ha-font-size-2xl) - 40px) / 2);
+    font-size: var(--ha-font-size-m);
+    letter-spacing: normal;
+    line-height: normal;
+  }
+  .card-header > span {
+    min-width: 0;
+  }
+  .card-content.list {
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .card-content.list > p,
+  .card-content.list > ha-alert {
+    display: block;
+    margin-left: var(--ha-space-4);
+    margin-right: var(--ha-space-4);
+  }
+`;

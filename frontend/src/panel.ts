@@ -9,6 +9,7 @@
  */
 import { LitElement, css, html, nothing, type PropertyValues } from "lit";
 import {
+  mdiAccountVoice,
   mdiBackupRestore,
   mdiClose,
   mdiCogs,
@@ -26,6 +27,7 @@ import "./components/revert-dialog";
 import "./tabs/displays";
 import "./tabs/install";
 import "./tabs/settings";
+import "./tabs/speakers";
 import "./tabs/profiles";
 import "./tabs/backups";
 
@@ -36,6 +38,7 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "displays", label: "Displays", icon: mdiShellyElevateDisplay },
   { id: "install", label: "Install", icon: mdiDownloadCircleOutline },
   { id: "settings", label: "Settings", icon: mdiTune },
+  { id: "speakers", label: "Speakers", icon: mdiAccountVoice },
   { id: "profiles", label: "Profiles", icon: mdiCogs },
   { id: "backups", label: "Backups", icon: mdiBackupRestore },
 ];
@@ -269,6 +272,14 @@ class ShellyElevatePanel extends LitElement {
           .entryId=${this._entryId}
           ?narrow=${this.narrow}
         ></sep-settings-tab>`;
+      case "speakers":
+        return html`<sep-speakers-tab
+          .page=${page}
+          .api=${this._api}
+          .devices=${this._devices}
+          .entryId=${this._entryId}
+          ?narrow=${this.narrow}
+        ></sep-speakers-tab>`;
       case "profiles":
         return html`<sep-profiles-tab .page=${page} .api=${this._api} .devices=${this._devices} ?narrow=${this.narrow}></sep-profiles-tab>`;
       case "backups":

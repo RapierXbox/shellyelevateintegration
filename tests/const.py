@@ -85,6 +85,7 @@ _RANGES: dict[str, dict[str, Any]] = {
     "proximityKeepAwakeSeconds": {"min": 0, "max": 86400, "step": 5},
     "voiceWakeSensitivity": {"min": 0, "max": 100, "step": 1},
     "voiceAssistantMaxRecordSeconds": {"min": 1, "max": 60},
+    "speakerIdStrictness": {"min": 0, "max": 100, "step": 1},
     "mqttPort": {"min": 1, "max": 65535},
 }
 

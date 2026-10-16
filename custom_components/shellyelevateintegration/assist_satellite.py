@@ -5,6 +5,10 @@ Flow (protocol v1):
   HA runs the pipeline, tells the display to stop streaming (voice.stop_audio),
   drives its voice UI (voice.state) and plays the TTS (voice.play_tts)
   display --voice.tts_finished--> HA
+
+With speaker recognition the display marks voice.wake with speaker_pending and sends who said the
+wake word as voice.speaker. The pipeline waits a moment for it so the conversation agent is told who
+speaks. Audio keeps queuing meanwhile so nothing is lost.
 """
 
 from __future__ import annotations
@@ -41,6 +45,13 @@ ANNOUNCE_TIMEOUT = 300
 AUDIO_QUEUE_SIZE = 256
 # the error code HA uses when another satellite already answered the same wake word
 DUPLICATE_WAKE_UP = "duplicate_wake_up_detected"
+# most seconds the pipeline waits for the speaker of the wake word. the user keeps talking meanwhile
+SPEAKER_WAIT = 3.0
+# on top of the last embedding time for loading the model and a busy display
+SPEAKER_SLACK = 1.0
+SPEAKER_KNOWN = "The person speaking is {name}."
+# always sent: the chat log would otherwise keep the previous speaker for the next turns
+SPEAKER_UNKNOWN = "The person speaking could not be identified."
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -92,6 +103,11 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
             available_wake_words=[], active_wake_words=[], max_active_wake_words=1
         )
         self._last_device_state: str | None = None
+        # display session of the running wake word pipeline and its speaker result
+        self._session: int | None = None
+        self._speaker: asyncio.Future[dict[str, Any]] | None = None
+        # bumped by every wake word so a pipeline still waiting for its speaker knows it was replaced
+        self._generation = 0
 
     # ---------------------------------------------------------------- HA wiring
 
@@ -150,7 +166,15 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
     def _on_message(self, message: dict[str, Any]) -> None:
         msg_type = message.get("type")
         if msg_type == "voice.wake":
-            self._start_pipeline(wake_word_phrase=message.get("phrase"))
+            self._start_pipeline(
+                wake_word_phrase=message.get("phrase"),
+                session=message.get("session"),
+                speaker_pending=bool(message.get("speaker_pending")),
+            )
+        elif msg_type == "voice.speaker":
+            if self._speaker is not None and not self._speaker.done() and message.get("session") == self._session:
+                self._speaker.set_result(message)
+
         elif msg_type == "voice.audio_end":
             self._end_audio()
         elif msg_type == "voice.tts_finished":
@@ -200,10 +224,17 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
             _LOGGER.debug("Audio queue full, dropping chunk")
 
     @callback
-    def _start_pipeline(self, *, wake_word_phrase: str | None = None) -> None:
+    def _start_pipeline(
+        self, *, wake_word_phrase: str | None = None, session: int | None = None, speaker_pending: bool = False
+    ) -> None:
         self._end_audio()
         queue: asyncio.Queue[bytes | None] = asyncio.Queue(AUDIO_QUEUE_SIZE)
         self._audio_queue = queue
+        self._session = session
+        self._generation += 1
+        generation = self._generation
+        speaker_active = self.device.speaker_active
+        self._speaker = speaker = self.hass.loop.create_future() if speaker_active and speaker_pending else None
 
         async def _stream() -> AsyncIterator[bytes]:
             while (chunk := await queue.get()) is not None:
@@ -211,6 +242,18 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
 
         async def _run() -> None:
             try:
+                if speaker_active:
+                    wake: dict[str, Any] | None = None
+                    if speaker is not None:
+                        try:
+                            async with asyncio.timeout(self._speaker_wait()):
+                                wake = await speaker
+                        except TimeoutError:
+                            _LOGGER.debug("No speaker from %s in time", self.device.entry.title)
+                    if self._generation != generation:
+                        # a newer wake word took over while this one waited
+                        return
+                    self._add_speaker_prompt(wake)
                 await self.async_accept_pipeline_from_satellite(
                     _stream(), start_stage=PipelineStage.STT, wake_word_phrase=wake_word_phrase
                 )
@@ -222,6 +265,24 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
                 self._send("voice.state", state="error", message=str(err))
 
         self.device.entry.async_create_background_task(self.hass, _run(), f"{DOMAIN} pipeline {self.device.device_id}")
+
+    def _speaker_wait(self) -> float:
+        """How long the display needed for the last wake word, within SPEAKER_WAIT."""
+        latency = self.device.state.get("speaker.latency_ms")
+        if not isinstance(latency, int | float) or latency <= 0:
+            return SPEAKER_WAIT
+        return min(SPEAKER_WAIT, latency / 1000 + SPEAKER_SLACK)
+
+    def _add_speaker_prompt(self, wake: dict[str, Any] | None) -> None:
+        """Tell the conversation agent who speaks next to any prompt start_conversation set."""
+        if wake is not None and wake.get("status") == "identified" and wake.get("name"):
+            line = SPEAKER_KNOWN.format(name=wake["name"])
+            if person := wake.get("person"):
+                line += f" Their Home Assistant person is {person}."
+        else:
+            line = SPEAKER_UNKNOWN
+        prompt = self._extra_system_prompt
+        self._extra_system_prompt = f"{prompt}\n{line}" if prompt else line
 
     @callback
     def _end_audio(self) -> None:
@@ -250,6 +311,10 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
         if event.type in (PipelineEventType.STT_VAD_END, PipelineEventType.STT_END):
             self._end_audio()
             self._send("voice.stop_audio")
+            text = (data.get("stt_output") or {}).get("text")
+            if event.type is PipelineEventType.STT_END and text and self._session is not None and self.device.speaker_active:
+                # recent voices in the panel show what was said
+                self._send("speaker.recent.label", session=self._session, text=text)
         elif event.type is PipelineEventType.TTS_END:
             url = (data.get("tts_output") or {}).get("url")
             if url:

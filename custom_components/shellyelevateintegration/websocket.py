@@ -20,7 +20,7 @@ import voluptuous as vol
 from .adb.apk import async_get_releases
 from .api import ShellyElevateIntegrationError
 from .api.app_schema import app_schema
-from .const import DOMAIN, SIGNAL_SETTINGS_CHANGED, is_panel_entry
+from .const import DOMAIN, SIGNAL_SETTINGS_CHANGED, SIGNAL_SPEAKER, is_panel_entry
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .ha_login import async_get_ha_login_manager
 from .installer import ProvisionOptions, async_provision, default_dashboard_url
@@ -129,6 +129,21 @@ def _cmd(schema: dict[Any, Any]) -> Callable[[_CommandFn], WebSocketCommandHandl
         return websocket_command(schema)(require_admin(async_response(handler)))
 
     return decorator
+
+
+async def _each(
+    hass: HomeAssistant,
+    entry_ids: list[str],
+    fn: Callable[[ShellyElevateIntegrationDevice], Awaitable[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Run fn on every display; one failing display does not stop the others."""
+    results: dict[str, Any] = {}
+    for entry_id in entry_ids:
+        try:
+            results[entry_id] = await fn(_device(hass, entry_id))
+        except HomeAssistantError as err:
+            results[entry_id] = {"ok": False, "error": str(err)}
+    return {"results": results}
 
 
 # --------------------------------------------------------------------------- devices / settings
@@ -252,16 +267,67 @@ async def ws_copy(hass: HomeAssistant, connection: ActiveConnection, msg: dict[s
 )
 async def ws_command(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """Run a command on one or more displays (fleet actions)."""
-    results: dict[str, Any] = {}
-    for entry_id in msg["entry_ids"]:
-        try:
-            results[entry_id] = {
-                "ok": True,
-                "data": await _device(hass, entry_id).async_command(msg["action"], **msg["params"]),
-            }
-        except HomeAssistantError as err:
-            results[entry_id] = {"ok": False, "error": str(err)}
-    return {"results": results}
+
+    async def run(device: ShellyElevateIntegrationDevice) -> dict[str, Any]:
+        return {"ok": True, "data": await device.async_command(msg["action"], **msg["params"])}
+
+    return await _each(hass, msg["entry_ids"], run)
+
+
+# --------------------------------------------------------------------------- speakers
+# the panel runs the speaker.* commands of a display through ws_command; these two need HA
+
+
+@_command({vol.Required("type"): f"{DOMAIN}/speakers/subscribe", vol.Required("entry_id"): str})
+@require_admin
+@callback
+def ws_speakers_subscribe(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> None:
+    """Forward enrollment progress and recognised speakers of one display."""
+    msg_id = msg["id"]
+    entry = hass.config_entries.async_get_entry(msg["entry_id"])
+    if entry is None or entry.domain != DOMAIN or is_panel_entry(entry):
+        connection.send_error(msg_id, "not_found", f"Display {msg['entry_id']} not found")
+        return
+
+    @callback
+    def forward(message: dict[str, Any]) -> None:
+        connection.send_message(event_message(msg_id, message))
+
+    # a dispatcher signal so turning speaker recognition on (which reloads the entry) keeps it
+    connection.subscriptions[msg_id] = async_dispatcher_connect(hass, SIGNAL_SPEAKER.format(entry.entry_id), forward)
+    connection.send_result(msg_id)
+
+
+@_cmd(
+    {
+        vol.Required("type"): f"{DOMAIN}/speakers/copy",
+        vol.Required("source"): str,
+        vol.Required("speaker_id"): str,
+        vol.Required("targets"): [str],
+    }
+)
+async def ws_speakers_copy(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
+    """Copy a speaker with its recorded samples to other displays under the same id."""
+    source = _device(hass, msg["source"])
+    listing = await source.async_command("speaker.list")
+    speaker = next((s for s in listing.get("speakers", []) if s["id"] == msg["speaker_id"]), None)
+    if speaker is None:
+        raise HomeAssistantError(translation_domain=DOMAIN, translation_key="unknown_speaker")
+    samples = []
+    for sample in speaker["samples"]:
+        if sample.get("audio"):
+            data = await source.async_command("speaker.sample.get", speaker_id=speaker["id"], sample_id=sample["id"])
+            samples.append((sample, data["pcm_b64"]))
+
+    async def put(target: ShellyElevateIntegrationDevice) -> dict[str, Any]:
+        await target.async_command("speaker.upsert", id=speaker["id"], name=speaker["name"], person=speaker["person"])
+        for sample, pcm in samples:
+            await target.async_command(
+                "speaker.sample.put", speaker_id=speaker["id"], sample_id=sample["id"], kind=sample["kind"], pcm_b64=pcm
+            )
+        return {"ok": True}
+
+    return await _each(hass, [t for t in msg["targets"] if t != msg["source"]], put)
 
 
 # --------------------------------------------------------------------------- dashboard login
@@ -295,18 +361,13 @@ async def ws_ha_login_set_default(
 
 
 async def _ha_login_each(hass: HomeAssistant, entry_ids: list[str], login: bool) -> dict[str, Any]:
-    results: dict[str, Any] = {}
-    for entry_id in entry_ids:
-        try:
-            device = _device(hass, entry_id)
-            if device.ha_login is None:
-                results[entry_id] = {"ok": False, "status": "unsupported"}
-                continue
-            status = await (device.ha_login.async_login() if login else device.ha_login.async_logout())
-            results[entry_id] = {"ok": status in ("ok", "off"), "status": status}
-        except HomeAssistantError as err:
-            results[entry_id] = {"ok": False, "error": str(err)}
-    return {"results": results}
+    async def run(device: ShellyElevateIntegrationDevice) -> dict[str, Any]:
+        if device.ha_login is None:
+            return {"ok": False, "status": "unsupported"}
+        status = await (device.ha_login.async_login() if login else device.ha_login.async_logout())
+        return {"ok": status in ("ok", "off"), "status": status}
+
+    return await _each(hass, entry_ids, run)
 
 
 @_cmd({vol.Required("type"): f"{DOMAIN}/ha_login/login", vol.Required("entry_ids"): [str]})
@@ -606,6 +667,8 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
         ws_export,
         ws_copy,
         ws_command,
+        ws_speakers_subscribe,
+        ws_speakers_copy,
         ws_ha_login_config,
         ws_ha_login_set_default,
         ws_ha_login_login,

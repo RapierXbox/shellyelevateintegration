@@ -39,6 +39,8 @@ class ShellyElevateIntegrationSensorDescription(ShellyElevateIntegrationEntityDe
 
     # Computes the value; by default the value of the first state key is used.
     value_fn: Callable[[ShellyElevateIntegrationDevice], Any] | None = None
+    # Extra state attributes.
+    attrs_fn: Callable[[ShellyElevateIntegrationDevice], dict[str, Any]] | None = None
 
 
 SENSORS: tuple[ShellyElevateIntegrationSensorDescription, ...] = (
@@ -131,6 +133,30 @@ SENSORS: tuple[ShellyElevateIntegrationSensorDescription, ...] = (
         supported_fn=has_state("memory.free"),
     ),
     ShellyElevateIntegrationSensorDescription(
+        key="last_speaker",
+        translation_key="last_speaker",
+        state_keys=("speaker.last", "speaker.last_id", "speaker.person", "speaker.score", "speaker.at"),
+        attrs_fn=lambda d: {
+            "speaker_id": d.state.get("speaker.last_id"),
+            "person": d.state.get("speaker.person"),
+            "score": d.state.get("speaker.score"),
+            "at": dt_util.utc_from_timestamp(at / 1000).isoformat()
+            if isinstance(at := d.state.get("speaker.at"), int | float)
+            else None,
+        },
+        supported_fn=lambda d: d.speaker_active,
+    ),
+    ShellyElevateIntegrationSensorDescription(
+        key="speaker_confidence",
+        translation_key="speaker_confidence",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        state_keys=("speaker.score",),
+        value_fn=lambda d: None if d.state.get("speaker.score") is None else round(d.state["speaker.score"] * 100),
+        supported_fn=lambda d: d.speaker_active,
+    ),
+    ShellyElevateIntegrationSensorDescription(
         key="voice_state",
         translation_key="voice_state",
         device_class=SensorDeviceClass.ENUM,
@@ -170,6 +196,12 @@ class ShellyElevateIntegrationSensor(ShellyElevateIntegrationEntity, SensorEntit
             return description.value_fn(self.device)
         assert description.state_keys
         return self.device.state.get(description.state_keys[0])
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Attributes of descriptions that have them."""
+        attrs_fn = self.entity_description.attrs_fn
+        return attrs_fn(self.device) if attrs_fn is not None else None
 
 
 class ShellyElevateIntegrationUptimeSensor(ShellyElevateIntegrationEntity, SensorEntity):
