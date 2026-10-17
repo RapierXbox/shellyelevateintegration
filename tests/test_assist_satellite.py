@@ -174,6 +174,20 @@ async def test_pipeline_events(hass: HomeAssistant, voice_display: FakeDisplay) 
     await _settle()
 
 
+async def test_first_run_keeps_display_listening(hass: HomeAssistant, voice_display: FakeDisplay) -> None:
+    """The first run of a new entity does not send idle at run start, the display already listens."""
+    satellite = _satellite(hass)
+    with patch.object(ShellyElevateIntegrationAssistSatellite, "async_accept_pipeline_from_satellite"):
+        satellite._start_pipeline()
+        await hass.async_block_till_done()
+    satellite._internal_on_pipeline_event(PipelineEvent(PipelineEventType.RUN_START, {}))
+    await _settle()
+    assert not any(action == "voice.state" for action, _ in voice_display.commands)
+    satellite._internal_on_pipeline_event(PipelineEvent(PipelineEventType.STT_START, {}))
+    await _settle()
+    assert voice_display.commands[-1] == ("voice.state", {"state": "listening"})
+
+
 async def test_duplicate_wake_goes_idle(hass: HomeAssistant, voice_display: FakeDisplay) -> None:
     """A wake word another satellite already answered is no error on this display."""
     satellite = _satellite(hass)
