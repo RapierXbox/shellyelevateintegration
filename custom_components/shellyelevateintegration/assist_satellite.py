@@ -312,7 +312,12 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
             self._end_audio()
             self._send("voice.stop_audio")
             text = (data.get("stt_output") or {}).get("text")
-            if event.type is PipelineEventType.STT_END and text and self._session is not None and self.device.speaker_active:
+            if (
+                event.type is PipelineEventType.STT_END
+                and text
+                and self._session is not None
+                and self.device.speaker_active
+            ):
                 # recent voices in the panel show what was said
                 self._send("speaker.recent.label", session=self._session, text=text)
         elif event.type is PipelineEventType.TTS_END:
