@@ -353,6 +353,29 @@ export type RevertEvent = RevertStepEvent | RevertDoneEvent | { type: "error"; e
 
 const PREFIX = "shellyelevateintegration";
 
+export interface SwitchPoint {
+  time: string;
+  temperature: number;
+}
+
+export const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+export type WeekSchedule = Record<Weekday, SwitchPoint[]>;
+
+export interface ThermostatSummary {
+  entry_id: string;
+  name: string;
+  loaded: boolean;
+  entity_id: string | null;
+}
+
+export interface ScheduleGetResult {
+  schedule: WeekSchedule;
+  default: boolean;
+  current_temperature: number | null;
+  next_change: string | null;
+}
+
 export class ElevateApi {
   /** Takes a getter because Home Assistant replaces the `hass` object on every state change. */
   constructor(private readonly getHass: () => HomeAssistant) {}
@@ -363,6 +386,19 @@ export class ElevateApi {
 
   private ws<T>(type: string, params: Record<string, unknown> = {}): Promise<T> {
     return this.hass.callWS<T>({ type: `${PREFIX}/${type}`, ...params });
+  }
+
+  // thermostat schedule
+  async thermostats(): Promise<ThermostatSummary[]> {
+    return (await this.ws<{ thermostats: ThermostatSummary[] }>("thermostats")).thermostats;
+  }
+
+  scheduleGet(entryId: string): Promise<ScheduleGetResult> {
+    return this.ws("thermostat/schedule/get", { entry_id: entryId });
+  }
+
+  async scheduleSet(entryId: string, schedule: WeekSchedule): Promise<WeekSchedule> {
+    return (await this.ws<{ schedule: WeekSchedule }>("thermostat/schedule/set", { entry_id: entryId, schedule })).schedule;
   }
 
   // devices / settings

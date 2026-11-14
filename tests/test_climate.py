@@ -105,7 +105,7 @@ async def test_heating(hass: HomeAssistant, display: FakeDisplay, mock_config_en
 async def test_cooling(hass: HomeAssistant, display: FakeDisplay, mock_config_entry: MockConfigEntry) -> None:
     """In cool mode the relay runs above the target."""
     climate = await _setup(hass, mock_config_entry, **{OPT_THERMOSTAT_MODE: "cool"})
-    assert hass.states.get(climate).attributes["hvac_modes"] == [HVACMode.OFF, HVACMode.COOL]
+    assert hass.states.get(climate).attributes["hvac_modes"] == [HVACMode.OFF, HVACMode.COOL, HVACMode.AUTO]
     await _call(hass, "set_temperature", climate, **{ATTR_TEMPERATURE: 20, ATTR_HVAC_MODE: HVACMode.COOL})
     assert _relay_commands(display) == [True]
     display.client.push_state({"relay.0": True, "temperature": 19.5})
@@ -219,3 +219,71 @@ async def test_humidity_unknown(hass: HomeAssistant, display: FakeDisplay, mock_
     await _call(hass, "set_hvac_mode", climate, **{ATTR_HVAC_MODE: HVACMode.HEAT})
     assert _relay_commands(display) == []
     assert entity_id(hass, CLIMATE_DOMAIN, "thermostat") == climate
+
+
+async def test_auto_schedule(
+    hass: HomeAssistant, display: FakeDisplay, mock_config_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """In auto the target follows the schedule; a manual target holds until the next switch point."""
+    from custom_components.shellyelevateintegration.schedule import async_get_schedule_store, parse_schedule
+
+    await hass.config.async_set_time_zone("Europe/Berlin")
+    freezer.move_to("2026-11-16T06:00:00+01:00")  # Monday
+    climate = await _setup(hass, mock_config_entry)
+    state = hass.states.get(climate)
+    assert HVACMode.AUTO in state.attributes["hvac_modes"]
+    assert "next_change" not in state.attributes
+
+    await _call(hass, "set_hvac_mode", climate, **{ATTR_HVAC_MODE: HVACMode.AUTO})
+    state = hass.states.get(climate)
+    assert state.state == HVACMode.AUTO
+    # default schedule: 05:30 22 °C until 08:00
+    assert state.attributes[ATTR_TEMPERATURE] == 22.0
+    assert state.attributes["schedule_temperature"] == 22.0
+    assert state.attributes["next_change"] == "2026-11-16T08:00:00+01:00"
+    assert state.attributes["override_until"] is None
+    assert _relay_commands(display) == [True]  # 21.4 < 22 - 0.3
+
+    # by hand: holds until 08:00
+    await _call(hass, "set_temperature", climate, **{ATTR_TEMPERATURE: 20})
+    state = hass.states.get(climate)
+    assert state.attributes[ATTR_TEMPERATURE] == 20.0
+    assert state.attributes["override_until"] == "2026-11-16T08:00:00+01:00"
+
+    freezer.move_to("2026-11-16T08:00:01+01:00")
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    state = hass.states.get(climate)
+    assert state.attributes[ATTR_TEMPERATURE] == 19.0
+    assert state.attributes["override_until"] is None
+    assert state.attributes["next_change"] == "2026-11-16T17:30:00+01:00"
+
+    # a saved schedule applies at once
+    store = await async_get_schedule_store(hass)
+    await store.async_set(mock_config_entry.entry_id, parse_schedule({"mon": [{"time": "07:00", "temperature": 23.5}]}))
+    await hass.async_block_till_done()
+    state = hass.states.get(climate)
+    assert state.attributes[ATTR_TEMPERATURE] == 23.5
+    assert state.attributes["next_change"] == "2026-11-23T07:00:00+01:00"
+
+    # leaving auto keeps the target and drops the schedule attributes
+    await _call(hass, "set_hvac_mode", climate, **{ATTR_HVAC_MODE: HVACMode.HEAT})
+    state = hass.states.get(climate)
+    assert state.attributes[ATTR_TEMPERATURE] == 23.5
+    assert "next_change" not in state.attributes
+
+
+async def test_auto_restore(
+    hass: HomeAssistant, display: FakeDisplay, mock_config_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """Auto survives a restart and starts from the schedule (an override does not survive)."""
+    await hass.config.async_set_time_zone("Europe/Berlin")
+    freezer.move_to("2026-11-16T12:00:00+01:00")
+    mock_restore_cache(
+        hass, [State("climate.shelly_wall_display_x2_thermostat", HVACMode.AUTO, {ATTR_TEMPERATURE: 25})]
+    )
+    climate = await _setup(hass, mock_config_entry)
+    state = hass.states.get(climate)
+    assert state.state == HVACMode.AUTO
+    assert state.attributes[ATTR_TEMPERATURE] == 19.0
+    assert state.attributes["next_change"] == "2026-11-16T17:30:00+01:00"

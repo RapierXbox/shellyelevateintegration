@@ -14,17 +14,20 @@ from homeassistant.components.websocket_api.messages import event_message
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.util import dt as dt_util
 import voluptuous as vol
 
 from .adb.apk import async_get_releases
 from .api import SettingDef, ShellyElevateIntegrationError
 from .api.app_schema import APP_RULES, app_schema
-from .const import DOMAIN, SIGNAL_SETTINGS_CHANGED, SIGNAL_SPEAKER, is_panel_entry
+from .const import DOMAIN, OPT_THERMOSTAT, SIGNAL_SETTINGS_CHANGED, SIGNAL_SPEAKER, is_panel_entry
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .ha_login import async_get_ha_login_manager
 from .installer import ProvisionOptions, async_provision, default_dashboard_url
 from .revert import RevertOptions, async_revert, async_revert_check
+from .schedule import async_get_schedule_store, parse_schedule
 from .services import (
     async_apply_profile,
     async_copy_settings,
@@ -697,6 +700,66 @@ async def ws_revert(hass: HomeAssistant, connection: ActiveConnection, msg: dict
     connection.send_result(msg_id)
 
 
+# --------------------------------------------------------------------------- thermostat schedule
+
+
+def _thermostat_entity(hass: HomeAssistant, device: ShellyElevateIntegrationDevice) -> str | None:
+    return er.async_get(hass).async_get_entity_id("climate", DOMAIN, f"{device.device_id}_thermostat")
+
+
+@_cmd({vol.Required("type"): f"{DOMAIN}/thermostats"})
+async def ws_thermostats(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
+    """Displays with the thermostat turned on in their options."""
+    thermostats = []
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if is_panel_entry(entry) or not entry.options.get(OPT_THERMOSTAT):
+            continue
+        loaded = entry.state is ConfigEntryState.LOADED
+        thermostats.append(
+            {
+                "entry_id": entry.entry_id,
+                "name": entry.title,
+                "loaded": loaded,
+                "entity_id": _thermostat_entity(hass, entry.runtime_data) if loaded else None,
+            }
+        )
+    return {"thermostats": thermostats}
+
+
+@_cmd({vol.Required("type"): f"{DOMAIN}/thermostat/schedule/get", vol.Required("entry_id"): str})
+async def ws_schedule_get(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
+    """The weekly schedule of a display and what it says right now."""
+    entry_id = msg["entry_id"]
+    store = await async_get_schedule_store(hass)
+    schedule = store.get(entry_id)
+    target, upcoming = schedule.target_at(dt_util.now())
+    return {
+        "schedule": schedule.as_dict(),
+        "default": store.is_default(entry_id),
+        "current_temperature": target,
+        "next_change": upcoming.isoformat() if upcoming else None,
+    }
+
+
+@_cmd(
+    {
+        vol.Required("type"): f"{DOMAIN}/thermostat/schedule/set",
+        vol.Required("entry_id"): str,
+        vol.Required("schedule"): dict,
+    }
+)
+async def ws_schedule_set(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
+    """Save the weekly schedule of a display; the thermostat follows it at once in auto mode."""
+    device = _device(hass, msg["entry_id"])
+    try:
+        schedule = parse_schedule(msg["schedule"])
+    except ValueError as err:
+        raise HomeAssistantError(str(err)) from err
+    store = await async_get_schedule_store(hass)
+    await store.async_set(device.entry.entry_id, schedule)
+    return {"schedule": schedule.as_dict()}
+
+
 @callback
 def async_setup_websocket(hass: HomeAssistant) -> None:
     """Register all commands."""
@@ -729,5 +792,8 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
         ws_provision,
         ws_revert_check,
         ws_revert,
+        ws_thermostats,
+        ws_schedule_get,
+        ws_schedule_set,
     ):
         websocket_api.async_register_command(hass, command)

@@ -349,3 +349,40 @@ async def test_revert(hass: HomeAssistant, init_integration: MockConfigEntry, ws
     with patch(f"{WS}.async_revert", AsyncMock(side_effect=RuntimeError("gone"))):
         assert await _subscribe(ws, "revert/run", 1, host=HOST) == [{"type": "error", "error": "gone"}]
     await asyncio.sleep(0)
+
+
+async def test_thermostat_schedule(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, display: FakeDisplay, ws
+) -> None:
+    """Thermostats are listed; the schedule can be read, refused when broken and saved."""
+    from custom_components.shellyelevateintegration.const import OPT_THERMOSTAT, OPT_THERMOSTAT_RELAY
+
+    mock_config_entry.add_to_hass(hass)
+    hass.config_entries.async_update_entry(mock_config_entry, options={OPT_THERMOSTAT: True, OPT_THERMOSTAT_RELAY: "0"})
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    thermostats = (await ws("thermostats"))["result"]["thermostats"]
+    assert len(thermostats) == 1
+    assert thermostats[0]["entry_id"] == mock_config_entry.entry_id
+    assert thermostats[0]["entity_id"].startswith("climate.")
+
+    result = (await ws("thermostat/schedule/get", entry_id=mock_config_entry.entry_id))["result"]
+    assert result["default"] is True
+    assert len(result["schedule"]["mon"]) == 4
+
+    broken = await ws("thermostat/schedule/set", entry_id=mock_config_entry.entry_id, schedule={"mon": "x"})
+    assert not broken["success"]
+    assert "mon" in broken["error"]["message"]
+
+    saved = await ws(
+        "thermostat/schedule/set",
+        entry_id=mock_config_entry.entry_id,
+        schedule={"sat": [{"time": "09:00", "temperature": 21.5}]},
+    )
+    assert saved["success"]
+    result = (await ws("thermostat/schedule/get", entry_id=mock_config_entry.entry_id))["result"]
+    assert result["default"] is False
+    assert result["schedule"]["sat"] == [{"time": "09:00", "temperature": 21.5}]
+    assert result["schedule"]["mon"] == []
+    assert result["current_temperature"] == 21.5
