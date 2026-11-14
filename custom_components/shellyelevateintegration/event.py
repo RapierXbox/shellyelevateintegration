@@ -37,7 +37,7 @@ SWIPE_TYPES = [
 # The gesture ids of the app. A plain one finger tap is ordinary use of the panel and never reported.
 GESTURE_TYPES = [
     *[f"tap_{fingers}" for fingers in (2, 3, 4, 5)],
-    "double_tap_1",
+    *[f"double_tap_{fingers}" for fingers in (1, 2, 3, 4, 5)],
     *[f"long_press_{fingers}" for fingers in (1, 2, 3, 4, 5)],
     *[f"edge_{side}" for side in ("left", "right", "top", "bottom")],
 ]
