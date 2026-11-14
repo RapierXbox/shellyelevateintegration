@@ -117,9 +117,7 @@ async def test_prompt_names_the_speaker(hass: HomeAssistant, speaker_display: Fa
         await accept.started.wait()
         speaker_display.client.push({"type": "voice.audio_end"})
         await hass.async_block_till_done()
-    assert accept.prompts == [
-        "The person speaking is Martin. Their Home Assistant person is person.martin."
-    ]
+    assert accept.prompts == ["The person speaking is Martin. Their Home Assistant person is person.martin."]
 
 
 async def test_prompt_is_appended(hass: HomeAssistant, speaker_display: FakeDisplay) -> None:
@@ -179,7 +177,10 @@ async def test_transcript_labels_the_session(hass: HomeAssistant, speaker_displa
 
 
 async def test_ws_subscribe(
-    hass: HomeAssistant, speaker_display: FakeDisplay, mock_config_entry: MockConfigEntry, hass_ws_client: WebSocketGenerator
+    hass: HomeAssistant,
+    speaker_display: FakeDisplay,
+    mock_config_entry: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
 ) -> None:
     """Enrollment progress and recognised speakers reach the panel."""
     client = await hass_ws_client(hass)
@@ -284,7 +285,10 @@ async def test_audio_end_during_the_wait(hass: HomeAssistant, speaker_display: F
 
 
 async def test_subscription_survives_a_reload(
-    hass: HomeAssistant, speaker_display: FakeDisplay, mock_config_entry: MockConfigEntry, hass_ws_client: WebSocketGenerator
+    hass: HomeAssistant,
+    speaker_display: FakeDisplay,
+    mock_config_entry: MockConfigEntry,
+    hass_ws_client: WebSocketGenerator,
 ) -> None:
     """Turning speaker recognition on reloads the entry and the panel keeps getting progress."""
     client = await hass_ws_client(hass)
