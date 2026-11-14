@@ -1,4 +1,4 @@
-"""Event entities: physical buttons, wired inputs, power button, swipe gestures, speakers."""
+"""Event entities: physical buttons, wired inputs, power button, swipes, other gestures, speakers."""
 
 from __future__ import annotations
 
@@ -27,11 +27,19 @@ def _swipe_type(direction: str, fingers: int) -> str:
 
 
 SWIPE_SETTING = "publishSwipeEvents"
+GESTURE_SETTING = "publishGestureEvents"
 
 PRESS_TYPES = ["single", "double", "triple", "long"]
 SPEAKER_TYPES = ["identified", "unknown"]
 SWIPE_TYPES = [
     _swipe_type(direction, fingers) for fingers in (1, 2, 3, 4, 5) for direction in ("up", "down", "left", "right")
+]
+# The gesture ids of the app. A plain one finger tap is ordinary use of the panel and never reported.
+GESTURE_TYPES = [
+    *[f"tap_{fingers}" for fingers in (2, 3, 4, 5)],
+    "double_tap_1",
+    *[f"long_press_{fingers}" for fingers in (1, 2, 3, 4, 5)],
+    *[f"edge_{side}" for side in ("left", "right", "top", "bottom")],
 ]
 
 
@@ -56,6 +64,9 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[EventEntity]
         entities.append(ShellyElevateIntegrationButtonEvent(device, "power_button", None))
     # publishSwipeEvents only makes it unavailable (see features.py)
     entities.append(ShellyElevateIntegrationSwipeEvent(device))
+    if GESTURE_SETTING in device.settings:
+        # only apps that know the setting report taps, long presses and edge swipes
+        entities.append(ShellyElevateIntegrationGestureEvent(device))
     if device.speaker_active:
         entities.append(ShellyElevateIntegrationSpeakerEvent(device))
     return entities
@@ -142,17 +153,18 @@ class ShellyElevateIntegrationSwipeEvent(_ShellyElevateIntegrationEvent):
     """Swipe gestures on the screen."""
 
     _attr_event_types = SWIPE_TYPES
+    _setting = SWIPE_SETTING
 
-    def __init__(self, device: ShellyElevateIntegrationDevice) -> None:
+    def __init__(self, device: ShellyElevateIntegrationDevice, key: str = "swipe") -> None:
         """Initialize."""
-        super().__init__(device, ShellyElevateIntegrationEventDescription(key="swipe", translation_key="swipe"))
+        super().__init__(device, ShellyElevateIntegrationEventDescription(key=key, translation_key=key))
 
     @property
     def available(self) -> bool:
         """Unavailable while the display does not publish swipes."""
         if not super().available:
             return False
-        value = self.device.settings.get(SWIPE_SETTING)
+        value = self.device.settings.get(self._setting)
         return value is None or condition_holds({"eq": True}, value, loose=self.device.legacy)
 
     async def async_added_to_hass(self) -> None:
@@ -162,7 +174,7 @@ class ShellyElevateIntegrationSwipeEvent(_ShellyElevateIntegrationEvent):
 
     @callback
     def _on_settings(self, message: dict[str, Any]) -> None:
-        if message.get("type") == "settings_changed" and SWIPE_SETTING in (message.get("changes") or {}):
+        if message.get("type") == "settings_changed" and self._setting in (message.get("changes") or {}):
             self.async_write_ha_state()
 
     def _match(self, message: dict[str, Any]) -> str | None:
@@ -171,3 +183,20 @@ class ShellyElevateIntegrationSwipeEvent(_ShellyElevateIntegrationEvent):
         fingers = message.get("fingers")
         event_type = _swipe_type(str(message.get("direction")), fingers if isinstance(fingers, int) else 1)
         return event_type if event_type in SWIPE_TYPES else None
+
+
+class ShellyElevateIntegrationGestureEvent(ShellyElevateIntegrationSwipeEvent):
+    """Taps with several fingers, long presses, double taps and swipes in from an edge."""
+
+    _attr_event_types = GESTURE_TYPES
+    _setting = GESTURE_SETTING
+
+    def __init__(self, device: ShellyElevateIntegrationDevice) -> None:
+        """Initialize."""
+        super().__init__(device, "gesture")
+
+    def _match(self, message: dict[str, Any]) -> str | None:
+        if message.get("event") != "gesture":
+            return None
+        gesture = message.get("gesture")
+        return gesture if gesture in GESTURE_TYPES else None

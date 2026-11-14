@@ -350,6 +350,9 @@
       "swipe": {
         "name": "Wischen"
       },
+      "gesture": {
+        "name": "Geste"
+      },
       "speaker": {
         "name": "Sprecher",
         "state_attributes": {

@@ -90,3 +90,39 @@ async def test_legacy_has_no_events(hass: HomeAssistant, init_legacy: MockConfig
     """The legacy app only publishes events over MQTT."""
     entries = er.async_entries_for_config_entry(er.async_get(hass), init_legacy.entry_id)
     assert "event" not in {entry.domain for entry in entries}
+
+
+async def test_gesture_events(hass: HomeAssistant, mock_config_entry: MockConfigEntry, display: FakeDisplay) -> None:
+    """An app that knows the gesture setting gets a gesture entity for taps, long presses and edges."""
+    display.settings["publishGestureEvents"] = True
+    await setup_entry(hass, mock_config_entry)
+    gesture = entity_id(hass, "event", "gesture")
+    assert hass.states.get(gesture).state == STATE_UNKNOWN
+
+    display.client.push({"type": "event", "event": "gesture", "gesture": "tap_3"})
+    await hass.async_block_till_done()
+    assert hass.states.get(gesture).attributes[ATTR_EVENT_TYPE] == "tap_3"
+    display.client.push({"type": "event", "event": "gesture", "gesture": "edge_left"})
+    await hass.async_block_till_done()
+    assert hass.states.get(gesture).attributes[ATTR_EVENT_TYPE] == "edge_left"
+
+    # unknown ids and swipes are not for this entity
+    before = hass.states.get(gesture).last_changed
+    for message in (
+        {"type": "event", "event": "gesture", "gesture": "tap_1"},
+        {"type": "event", "event": "gesture"},
+        {"type": "event", "event": "swipe", "direction": "left", "fingers": 2},
+    ):
+        display.client.push(message)
+    await hass.async_block_till_done()
+    assert hass.states.get(gesture).last_changed == before
+
+    display.client.push({"type": "settings_changed", "changes": {"publishGestureEvents": False}})
+    await hass.async_block_till_done()
+    assert hass.states.get(gesture).state == STATE_UNAVAILABLE
+
+
+async def test_no_gesture_entity_for_older_apps(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
+    """Apps without the gesture setting have no gesture entity."""
+    registry = er.async_get(hass)
+    assert not [e for e in registry.entities.values() if e.unique_id.endswith("_gesture")]

@@ -41,6 +41,9 @@
       "swipe": {
         "default": "mdi:gesture-swipe"
       },
+      "gesture": {
+        "default": "mdi:gesture-tap"
+      },
       "button": {
         "default": "mdi:gesture-tap-button"
       },
