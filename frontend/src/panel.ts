@@ -276,7 +276,13 @@ class ShellyElevatePanel extends LitElement {
           ?narrow=${this.narrow}
         ></sep-settings-tab>`;
       case "thermostat":
-        return html`<sep-thermostat-tab .page=${page} .api=${this._api} ?narrow=${this.narrow}></sep-thermostat-tab>`;
+        return html`<sep-thermostat-tab
+          .page=${page}
+          .api=${this._api}
+          .devices=${this._devices}
+          .entryId=${this._entryId}
+          ?narrow=${this.narrow}
+        ></sep-thermostat-tab>`;
       case "speakers":
         return html`<sep-speakers-tab
           .page=${page}

@@ -81,6 +81,7 @@ from .const import (
     is_panel_entry,
 )
 from .settings.profiles import ProfileManager, async_get_profile_manager
+from .thermostat_options import thermostat_options_error
 
 if TYPE_CHECKING:
     # ha 2026.9+ aliases voluptuous to probatio at runtime
@@ -704,11 +705,8 @@ class ShellyElevateIntegrationOptionsFlow(OptionsFlowWithReload):
         errors: dict[str, str] = {}
         if user_input is not None:
             caps = self._capabilities()
-            if user_input[OPT_THERMOSTAT_MIN_TEMP] >= user_input[OPT_THERMOSTAT_MAX_TEMP]:
-                errors["base"] = "invalid_temp_range"
-            elif not user_input.get(OPT_THERMOSTAT_SENSOR) and caps is not None and not caps.temperature:
-                # XL, X2i and X1i have no temperature sensor of their own
-                errors[OPT_THERMOSTAT_SENSOR] = "sensor_required"
+            if error := thermostat_options_error(user_input, None if caps is None else caps.temperature):
+                errors[error[0]] = error[1]
             else:
                 options = {**self._options, **user_input}
                 if not user_input.get(OPT_THERMOSTAT_SENSOR):

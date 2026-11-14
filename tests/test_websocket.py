@@ -386,3 +386,55 @@ async def test_thermostat_schedule(
     assert result["schedule"]["sat"] == [{"time": "09:00", "temperature": 21.5}]
     assert result["schedule"]["mon"] == []
     assert result["current_temperature"] == 21.5
+
+
+async def test_thermostat_options(
+    hass: HomeAssistant, init_integration: MockConfigEntry, display: FakeDisplay, ws
+) -> None:
+    """The thermostat options can be read, refused when broken and saved; saving reloads the display."""
+    from custom_components.shellyelevateintegration.const import OPT_THERMOSTAT, OPT_THERMOSTAT_SENSOR
+
+    entry_id = init_integration.entry_id
+    result = (await ws("thermostat/options/get", entry_id=entry_id))["result"]
+    assert result["enabled"] is False
+    assert result["relays"] == 2
+    assert result["options"]["thermostat_relay"] == "0"
+    assert result["entity_id"] is None
+
+    bad = await ws("thermostat/options/set", entry_id=entry_id, enabled=True, options={"thermostat_relay": "5"})
+    assert not bad["success"]
+    bad = await ws(
+        "thermostat/options/set",
+        entry_id=entry_id,
+        enabled=True,
+        options={"thermostat_min_temp": 25, "thermostat_max_temp": 20},
+    )
+    assert not bad["success"]
+    bad = await ws("thermostat/options/set", entry_id=entry_id, enabled=True, options={"thermostat_mode": "dry"})
+    assert not bad["success"]
+
+    saved = await ws(
+        "thermostat/options/set",
+        entry_id=entry_id,
+        enabled=True,
+        options={"thermostat_relay": "1", "thermostat_sensor": "sensor.room", "thermostat_tolerance": 0.5},
+    )
+    assert saved["success"]
+    assert saved["result"] == {"changed": True}
+    await hass.async_block_till_done()
+    assert init_integration.options[OPT_THERMOSTAT] is True
+    assert init_integration.options["thermostat_relay"] == "1"
+    assert init_integration.options[OPT_THERMOSTAT_SENSOR] == "sensor.room"
+    assert init_integration.options["thermostat_tolerance"] == 0.5
+
+    # the empty sensor means the display's own
+    await ws("thermostat/options/set", entry_id=entry_id, enabled=True, options={"thermostat_sensor": ""})
+    await hass.async_block_till_done()
+    assert OPT_THERMOSTAT_SENSOR not in init_integration.options
+
+    again = await ws("thermostat/options/set", entry_id=entry_id, enabled=True, options={})
+    assert again["result"] == {"changed": False}
+    off = await ws("thermostat/options/set", entry_id=entry_id, enabled=False)
+    assert off["result"] == {"changed": True}
+    await hass.async_block_till_done()
+    assert init_integration.options[OPT_THERMOSTAT] is False

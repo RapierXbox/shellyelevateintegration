@@ -369,6 +369,24 @@ export interface ThermostatSummary {
   entity_id: string | null;
 }
 
+export interface ThermostatOptions {
+  thermostat_relay: string;
+  thermostat_sensor?: string | null;
+  thermostat_mode: "heat" | "cool";
+  thermostat_tolerance: number;
+  thermostat_min_cycle: number;
+  thermostat_min_temp: number;
+  thermostat_max_temp: number;
+}
+
+export interface ThermostatOptionsResult {
+  enabled: boolean;
+  options: ThermostatOptions;
+  relays: number;
+  own_sensor: boolean;
+  entity_id: string | null;
+}
+
 export interface ScheduleGetResult {
   schedule: WeekSchedule;
   default: boolean;
@@ -391,6 +409,14 @@ export class ElevateApi {
   // thermostat schedule
   async thermostats(): Promise<ThermostatSummary[]> {
     return (await this.ws<{ thermostats: ThermostatSummary[] }>("thermostats")).thermostats;
+  }
+
+  thermostatOptionsGet(entryId: string): Promise<ThermostatOptionsResult> {
+    return this.ws("thermostat/options/get", { entry_id: entryId });
+  }
+
+  thermostatOptionsSet(entryId: string, enabled: boolean, options?: Partial<ThermostatOptions>): Promise<{ changed: boolean }> {
+    return this.ws("thermostat/options/set", { entry_id: entryId, enabled, ...(options ? { options } : {}) });
   }
 
   scheduleGet(entryId: string): Promise<ScheduleGetResult> {

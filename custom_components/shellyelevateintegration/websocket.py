@@ -22,7 +22,20 @@ import voluptuous as vol
 from .adb.apk import async_get_releases
 from .api import SettingDef, ShellyElevateIntegrationError
 from .api.app_schema import APP_RULES, app_schema
-from .const import DOMAIN, OPT_THERMOSTAT, SIGNAL_SETTINGS_CHANGED, SIGNAL_SPEAKER, is_panel_entry
+from .const import (
+    DOMAIN,
+    OPT_THERMOSTAT,
+    OPT_THERMOSTAT_MAX_TEMP,
+    OPT_THERMOSTAT_MIN_CYCLE,
+    OPT_THERMOSTAT_MIN_TEMP,
+    OPT_THERMOSTAT_MODE,
+    OPT_THERMOSTAT_RELAY,
+    OPT_THERMOSTAT_SENSOR,
+    OPT_THERMOSTAT_TOLERANCE,
+    SIGNAL_SETTINGS_CHANGED,
+    SIGNAL_SPEAKER,
+    is_panel_entry,
+)
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .ha_login import async_get_ha_login_manager
 from .installer import ProvisionOptions, async_provision, default_dashboard_url
@@ -38,6 +51,7 @@ from .services import (
 from .settings import schema as schema_util
 from .settings.backups import async_get_backup_store
 from .settings.profiles import async_get_profile_manager
+from .thermostat_options import THERMOSTAT_DEFAULTS, thermostat_options_error
 
 
 def _device(hass: HomeAssistant, entry_id: str) -> ShellyElevateIntegrationDevice:
@@ -726,6 +740,89 @@ async def ws_thermostats(hass: HomeAssistant, connection: ActiveConnection, msg:
     return {"thermostats": thermostats}
 
 
+_THERMOSTAT_KEYS = (
+    OPT_THERMOSTAT_RELAY,
+    OPT_THERMOSTAT_SENSOR,
+    OPT_THERMOSTAT_MODE,
+    OPT_THERMOSTAT_TOLERANCE,
+    OPT_THERMOSTAT_MIN_CYCLE,
+    OPT_THERMOSTAT_MIN_TEMP,
+    OPT_THERMOSTAT_MAX_TEMP,
+)
+_THERMOSTAT_OPTIONS = vol.Schema(
+    {
+        vol.Required(OPT_THERMOSTAT_RELAY): vol.All(vol.Coerce(str), vol.Match(r"^\d$")),
+        vol.Optional(OPT_THERMOSTAT_SENSOR): vol.Any(None, "", vol.Match(r"^sensor\.\w+$")),
+        vol.Required(OPT_THERMOSTAT_MODE): vol.In(["heat", "cool"]),
+        vol.Required(OPT_THERMOSTAT_TOLERANCE): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=3)),
+        vol.Required(OPT_THERMOSTAT_MIN_CYCLE): vol.All(vol.Coerce(float), vol.Range(min=0, max=86400)),
+        vol.Required(OPT_THERMOSTAT_MIN_TEMP): vol.All(vol.Coerce(float), vol.Range(min=-10, max=40)),
+        vol.Required(OPT_THERMOSTAT_MAX_TEMP): vol.All(vol.Coerce(float), vol.Range(min=0, max=50)),
+    }
+)
+
+
+@_cmd({vol.Required("type"): f"{DOMAIN}/thermostat/options/get", vol.Required("entry_id"): str})
+async def ws_thermostat_options_get(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """The thermostat options of a display (the same as in its integration options)."""
+    device = _device(hass, msg["entry_id"])
+    options = device.entry.options
+    caps = device.info.capabilities
+    return {
+        "enabled": bool(options.get(OPT_THERMOSTAT)),
+        "options": {key: options.get(key, THERMOSTAT_DEFAULTS.get(key)) for key in _THERMOSTAT_KEYS},
+        "relays": caps.relays,
+        "own_sensor": caps.temperature,
+        "entity_id": _thermostat_entity(hass, device),
+    }
+
+
+@_cmd(
+    {
+        vol.Required("type"): f"{DOMAIN}/thermostat/options/set",
+        vol.Required("entry_id"): str,
+        vol.Required("enabled"): bool,
+        vol.Optional("options"): dict,
+    }
+)
+async def ws_thermostat_options_set(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Turn the thermostat on or off and change its options; the display reloads like after the options flow."""
+    device = _device(hass, msg["entry_id"])
+    entry = device.entry
+    caps = device.info.capabilities
+    options = dict(entry.options)
+    options[OPT_THERMOSTAT] = msg["enabled"]
+    if msg["enabled"]:
+        if not caps.relays:
+            raise HomeAssistantError("This display has no relay to switch, so it cannot be a thermostat.")
+        current = {key: options.get(key, THERMOSTAT_DEFAULTS.get(key)) for key in _THERMOSTAT_KEYS}
+        try:
+            changes = _THERMOSTAT_OPTIONS({**current, **(msg.get("options") or {})})
+        except vol.Invalid as err:
+            raise HomeAssistantError(f"Invalid thermostat option: {err}") from err
+        if int(changes[OPT_THERMOSTAT_RELAY]) >= caps.relays:
+            raise HomeAssistantError("This relay does not exist on the display.")
+        if error := thermostat_options_error(changes, caps.temperature):
+            raise HomeAssistantError(
+                "The display has no temperature sensor of its own: choose one."
+                if error[1] == "sensor_required"
+                else "The minimum target temperature must be below the maximum."
+            )
+        options.update(changes)
+        if not changes.get(OPT_THERMOSTAT_SENSOR):
+            # empty = the display's own temperature sensor
+            options.pop(OPT_THERMOSTAT_SENSOR, None)
+    if options == dict(entry.options):
+        return {"changed": False}
+    hass.config_entries.async_update_entry(entry, options=options)
+    hass.config_entries.async_schedule_reload(entry.entry_id)
+    return {"changed": True}
+
+
 @_cmd({vol.Required("type"): f"{DOMAIN}/thermostat/schedule/get", vol.Required("entry_id"): str})
 async def ws_schedule_get(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
     """The weekly schedule of a display and what it says right now."""
@@ -793,6 +890,8 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
         ws_revert_check,
         ws_revert,
         ws_thermostats,
+        ws_thermostat_options_get,
+        ws_thermostat_options_set,
         ws_schedule_get,
         ws_schedule_set,
     ):
