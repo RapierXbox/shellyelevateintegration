@@ -6,6 +6,7 @@ from homeassistant.components.number import ATTR_MAX, ATTR_MIN, ATTR_STEP, ATTR_
 from homeassistant.components.select import ATTR_OPTION, SERVICE_SELECT_OPTION
 from homeassistant.const import ATTR_ENTITY_ID, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -97,3 +98,33 @@ async def test_text_without_value(
     display.settings["webviewUrl"] = None
     await setup_entry(hass, mock_config_entry)
     assert hass.states.get(entity_id(hass, "text", "dashboard_url")).state == STATE_UNKNOWN
+
+
+async def test_display_density(
+    hass: HomeAssistant, adb, init_integration: MockConfigEntry, display: FakeDisplay
+) -> None:
+    """The density is set over adb; the physical value removes the override."""
+    await hass.async_block_till_done()
+    number = entity_id(hass, "number", "display_density")
+    # disabled by default (the tests enable every entity)
+    assert not er.async_get(hass).async_get(number).disabled
+    state = hass.states.get(number)
+    assert state.state == "240.0"
+    assert state.attributes["physical_density"] == 240
+    assert state.attributes["overridden"] is False
+
+    adb.async_get_density.return_value = (240, 200)
+    await hass.services.async_call(
+        "number", SERVICE_SET_VALUE, {ATTR_ENTITY_ID: number, ATTR_VALUE: 200}, blocking=True
+    )
+    adb.async_set_density.assert_awaited_with(200)
+    state = hass.states.get(number)
+    assert state.state == "200.0"
+    assert state.attributes["overridden"] is True
+
+    adb.async_get_density.return_value = (240, None)
+    await hass.services.async_call(
+        "number", SERVICE_SET_VALUE, {ATTR_ENTITY_ID: number, ATTR_VALUE: 240}, blocking=True
+    )
+    adb.async_set_density.assert_awaited_with(None)
+    assert hass.states.get(number).state == "240.0"

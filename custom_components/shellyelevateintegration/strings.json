@@ -412,6 +412,9 @@
       },
       "voice_max_record": {
         "name": "Maximum recording time"
+      },
+      "display_density": {
+        "name": "Display density"
       }
     },
     "select": {

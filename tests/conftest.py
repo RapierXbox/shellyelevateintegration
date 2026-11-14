@@ -156,6 +156,8 @@ def make_adb() -> MagicMock:
     adb.async_install_app = AsyncMock(return_value=RELEASES[1])
     adb.async_restart_app = AsyncMock()
     adb.async_shell = AsyncMock(return_value="ok")
+    adb.async_get_density = AsyncMock(return_value=(240, None))
+    adb.async_set_density = AsyncMock()
     adb.async_is_reachable = AsyncMock(return_value=True)
     return adb
 

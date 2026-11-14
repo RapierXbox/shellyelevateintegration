@@ -412,6 +412,9 @@
       },
       "voice_max_record": {
         "name": "Maximale Aufnahmedauer"
+      },
+      "display_density": {
+        "name": "Anzeigedichte"
       }
     },
     "select": {

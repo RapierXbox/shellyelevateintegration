@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+from typing import Any
 
 from homeassistant.components.number import NumberEntity, NumberEntityDescription, NumberMode
 from homeassistant.const import EntityCategory, UnitOfTime
@@ -18,7 +20,11 @@ from .entity import (
     has_setting,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 PARALLEL_UPDATES = 0
+DENSITY_MIN = 80
+DENSITY_MAX = 640
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -82,11 +88,15 @@ NUMBERS: tuple[ShellyElevateIntegrationNumberDescription, ...] = (
 def create_entities(device: ShellyElevateIntegrationDevice) -> list[NumberEntity]:
     """Numbers the display should have now (ranges from the schema fetched at setup)."""
     schema = {item.key: item for item in device.schema or []}
-    return build_entities(
+    entities: list[NumberEntity] = build_entities(
         device,
         NUMBERS,
         lambda dev, desc: ShellyElevateIntegrationSettingNumber(dev, desc, schema.get(desc.setting_key or "")),
     )
+    if device.adb is not None:
+        # the density is set over adb (wm density), not through the app
+        entities.append(ShellyElevateIntegrationDensityNumber(device))
+    return entities
 
 
 async def async_setup_entry(
@@ -131,3 +141,69 @@ class ShellyElevateIntegrationSettingNumber(ShellyElevateIntegrationEntity, Numb
     async def async_set_native_value(self, value: float) -> None:
         """Write the setting."""
         await self.async_set_setting(value if self._is_float else round(value))
+
+
+class ShellyElevateIntegrationDensityNumber(ShellyElevateIntegrationEntity, NumberEntity):
+    """Display density in dpi (what `adb shell wm density` sets); the physical value removes the override."""
+
+    _attr_native_min_value = DENSITY_MIN
+    _attr_native_max_value = DENSITY_MAX
+    _attr_native_step = 5
+    _attr_native_unit_of_measurement = "dpi"
+    _attr_mode = NumberMode.BOX
+    _attr_entity_category = EntityCategory.CONFIG
+    entity_description: ShellyElevateIntegrationNumberDescription
+
+    def __init__(self, device: ShellyElevateIntegrationDevice) -> None:
+        """Initialize."""
+        super().__init__(
+            device,
+            ShellyElevateIntegrationNumberDescription(
+                key="display_density",
+                translation_key="display_density",
+                state_keys=(),
+                # rarely changed, and reading it opens an adb session at every setup
+                entity_registry_enabled_default=False,
+            ),
+        )
+        self._physical: int | None = None
+        self._override: int | None = None
+        self._read_ok = False
+
+    async def async_added_to_hass(self) -> None:
+        """Read the density once the display is set up (adb may still be connecting)."""
+        await super().async_added_to_hass()
+        self.device.entry.async_create_background_task(self.hass, self._async_read(), "read display density")
+
+    async def _async_read(self) -> None:
+        assert self.device.adb is not None
+        try:
+            self._physical, self._override = await self.device.adb.async_get_density()
+            self._read_ok = True
+        except Exception as err:
+            _LOGGER.debug("%s: could not read the display density: %s", self.device.entry.title, err)
+            self._read_ok = False
+        self.async_write_ha_state()
+
+    @property
+    def available(self) -> bool:
+        """Only while adb answered."""
+        return super().available and self._read_ok
+
+    @property
+    def native_value(self) -> float | None:
+        """The density in use."""
+        value = self._override or self._physical
+        return None if value is None else float(value)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """The physical (factory) density and whether it is overridden."""
+        return {"physical_density": self._physical, "overridden": self._override is not None}
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the density; the physical value resets the override."""
+        assert self.device.adb is not None
+        dpi = round(value)
+        await self.device.adb.async_set_density(None if dpi == self._physical else dpi)
+        await self._async_read()

@@ -412,3 +412,15 @@ async def test_watchdog_app_comes_back_meanwhile(
     adb.async_restart_app.assert_awaited_once()
     watchdog.async_stop()
     await watchdog._check(dt_util.utcnow())
+
+
+async def test_density(manager: AdbManager, device: FakeAdbDevice) -> None:
+    """The density is read from `wm density`, set and reset."""
+    device.answer("wm density", "Physical density: 240\nOverride density: 200\n")
+    assert await manager.async_get_density() == (240, 200)
+    device.answer("wm density", "Physical density: 320\n")
+    assert await manager.async_get_density() == (320, None)
+    await manager.async_set_density(260)
+    assert device.commands[-1] == "wm density 260"
+    await manager.async_set_density(None)
+    assert device.commands[-1] == "wm density reset"

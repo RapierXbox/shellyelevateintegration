@@ -115,6 +115,17 @@ class AdbManager:
 
         return await self.async_session(_run, auth_timeout=auth_timeout)
 
+    async def async_get_density(self) -> tuple[int | None, int | None]:
+        """Physical and overridden display density (`wm density`); the override is None when not set."""
+        out = await self.async_shell("wm density")
+        physical = re.search(r"Physical density:\s*(\d+)", out)
+        override = re.search(r"Override density:\s*(\d+)", out)
+        return (int(physical.group(1)) if physical else None, int(override.group(1)) if override else None)
+
+    async def async_set_density(self, dpi: int | None) -> None:
+        """Override the display density, or reset it to the physical one with None. Applies at once."""
+        await self.async_shell("wm density reset" if dpi is None else f"wm density {int(dpi)}")
+
     async def async_run_steps(
         self,
         commands: list[tuple[str, str]],
