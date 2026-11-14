@@ -124,7 +124,48 @@ export const renderSettingControl = (def: SettingDef, o: ControlOptions) => {
       >
         ${def.unit ? html`<span slot="end" class="unit">${def.unit}</span>` : nothing}
       </ha-input>`;
-    case "string_list":
+    case "string_list": {
+      const options = def.options ?? [];
+      if (options.length) {
+        // a list with options: the chosen ones as chips and a select that adds one more
+        const chosen = Array.isArray(o.value) ? (o.value as unknown[]).map(String) : [];
+        const rest = options.filter((opt) => !chosen.includes(String(opt.value)));
+        const labelOf = (v: string) => options.find((opt) => String(opt.value) === v)?.label ?? v;
+        const items = [{ value: "-1", label: "+ Add" }, ...rest.map((opt, i) => ({ value: String(i), label: opt.label }))];
+        return html`<div class="ctrl" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end">
+          ${chosen.map(
+            (v) =>
+              html`<span
+                style="display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 10px;border-radius:14px;background:var(--secondary-background-color);font-size:0.9em"
+                >${labelOf(v)}<button
+                  type="button"
+                  style="border:none;background:none;color:inherit;cursor:pointer;font-size:1.1em;line-height:1;padding:2px 6px"
+                  aria-label=${`Remove ${labelOf(v)}`}
+                  .disabled=${disabled}
+                  @click=${() => o.onValue(chosen.filter((c) => c !== v))}
+                >
+                  ×
+                </button></span
+              >`,
+          )}
+          ${rest.length
+            ? html`<ha-select
+                .label=${undefined}
+                aria-label=${label}
+                .options=${items}
+                .value=${"-1"}
+                .disabled=${disabled}
+                @selected=${(e: SelectedEvent) => {
+                  e.stopPropagation();
+                  const i = Number(e.detail.value);
+                  // back to the add entry so the same select adds the next one
+                  (e.target as HTMLElement & { value: string }).value = "-1";
+                  if (i >= 0 && rest[i]) o.onValue([...chosen, String(rest[i].value)]);
+                }}
+              ></ha-select>`
+            : nothing}
+        </div>`;
+      }
       return html`<ha-input
         class="ctrl"
         .disabled=${disabled}
@@ -133,6 +174,7 @@ export const renderSettingControl = (def: SettingDef, o: ControlOptions) => {
         .value=${o.text ?? toText(def, o.value)}
         @input=${(e: Event) => o.onText(inputValue(e))}
       ></ha-input>`;
+    }
     default:
       return html`<ha-input
         class="ctrl"

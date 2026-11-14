@@ -1182,14 +1182,35 @@ var e=globalThis,t=e.ShadowRoot&&(e.ShadyCSS===void 0||e.ShadyCSS.nativeShadow)&
         @input=${e=>t.onText(M(e))}
       >
         ${e.unit?m`<span slot="end" class="unit">${e.unit}</span>`:g}
-      </ha-input>`;case`string_list`:return m`<ha-input
+      </ha-input>`;case`string_list`:{let i=e.options??[];if(i.length){let e=Array.isArray(t.value)?t.value.map(String):[],a=i.filter(t=>!e.includes(String(t.value))),o=e=>i.find(t=>String(t.value)===e)?.label??e,s=[{value:`-1`,label:`+ Add`},...a.map((e,t)=>({value:String(t),label:e.label}))];return m`<div class="ctrl" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end">
+          ${e.map(n=>m`<span
+                style="display:inline-flex;align-items:center;gap:4px;padding:2px 4px 2px 10px;border-radius:14px;background:var(--secondary-background-color);font-size:0.9em"
+                >${o(n)}<button
+                  type="button"
+                  style="border:none;background:none;color:inherit;cursor:pointer;font-size:1.1em;line-height:1;padding:2px 6px"
+                  aria-label=${`Remove ${o(n)}`}
+                  .disabled=${r}
+                  @click=${()=>t.onValue(e.filter(e=>e!==n))}
+                >
+                  ×
+                </button></span
+              >`)}
+          ${a.length?m`<ha-select
+                .label=${void 0}
+                aria-label=${n}
+                .options=${s}
+                .value=${`-1`}
+                .disabled=${r}
+                @selected=${n=>{n.stopPropagation();let r=Number(n.detail.value);n.target.value=`-1`,r>=0&&a[r]&&t.onValue([...e,String(a[r].value)])}}
+              ></ha-select>`:g}
+        </div>`}return m`<ha-input
         class="ctrl"
         .disabled=${r}
         aria-label=${n}
         placeholder="value1, value2"
         .value=${t.text??Fr(e,t.value)}
         @input=${e=>t.onText(M(e))}
-      ></ha-input>`;default:return m`<ha-input
+      ></ha-input>`}default:return m`<ha-input
         class="ctrl"
         .disabled=${r}
         aria-label=${n}
