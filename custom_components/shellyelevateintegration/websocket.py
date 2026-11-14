@@ -14,13 +14,13 @@ from homeassistant.components.websocket_api.messages import event_message
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 import voluptuous as vol
 
 from .adb.apk import async_get_releases
 from .api import SettingDef, ShellyElevateIntegrationError
 from .api.app_schema import APP_RULES, app_schema
-from .const import DOMAIN, SIGNAL_SETTINGS_CHANGED, SIGNAL_SPEAKER, is_panel_entry
+from .const import DOMAIN, SIGNAL_DENSITY_CHANGED, SIGNAL_SETTINGS_CHANGED, SIGNAL_SPEAKER, is_panel_entry
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .ha_login import async_get_ha_login_manager
 from .installer import ProvisionOptions, async_provision, default_dashboard_url
@@ -697,6 +697,37 @@ async def ws_revert(hass: HomeAssistant, connection: ActiveConnection, msg: dict
     connection.send_result(msg_id)
 
 
+# --------------------------------------------------------------------------- display density
+
+
+@_cmd({vol.Required("type"): f"{DOMAIN}/display/density/get", vol.Required("entry_id"): str})
+async def ws_density_get(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
+    """Physical and overridden display density (needs ADB)."""
+    device = _device(hass, msg["entry_id"])
+    if device.adb is None:
+        return {"available": False, "physical": None, "override": None}
+    physical, override = await device.adb.async_get_density()
+    return {"available": True, "physical": physical, "override": override}
+
+
+@_cmd(
+    {
+        vol.Required("type"): f"{DOMAIN}/display/density/set",
+        vol.Required("entry_id"): str,
+        vol.Required("dpi"): vol.Any(None, vol.All(vol.Coerce(int), vol.Range(min=80, max=640))),
+    }
+)
+async def ws_density_set(hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]) -> dict[str, Any]:
+    """Set the display density at once; None resets it to the physical one."""
+    device = _device(hass, msg["entry_id"])
+    if device.adb is None:
+        raise HomeAssistantError("ADB is turned off for this display.")
+    await device.adb.async_set_density(msg["dpi"])
+    async_dispatcher_send(hass, SIGNAL_DENSITY_CHANGED.format(device.entry.entry_id))
+    physical, override = await device.adb.async_get_density()
+    return {"available": True, "physical": physical, "override": override}
+
+
 @callback
 def async_setup_websocket(hass: HomeAssistant) -> None:
     """Register all commands."""
@@ -729,5 +760,7 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
         ws_provision,
         ws_revert_check,
         ws_revert,
+        ws_density_get,
+        ws_density_set,
     ):
         websocket_api.async_register_command(hass, command)

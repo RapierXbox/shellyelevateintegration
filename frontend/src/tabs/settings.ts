@@ -5,6 +5,7 @@ import {
   ElevateApi,
   type SettingDef,
   type Settings,
+  type DensityInfo,
   type SettingsGetResult,
   deviceName,
   errorMessage,
@@ -67,6 +68,9 @@ export class SeSettingsTab extends LitElement {
     entryId: {},
     narrow: { type: Boolean, reflect: true },
     _data: { state: true },
+    _density: { state: true },
+    _densityInput: { state: true },
+    _densityBusy: { state: true },
     _loading: { state: true },
     _error: { state: true },
     _edits: { state: true },
@@ -90,6 +94,10 @@ export class SeSettingsTab extends LitElement {
   declare entryId: string;
   declare narrow: boolean;
   declare _data: SettingsGetResult | null;
+  /** Display density over ADB (not a setting of the app: applies at once, apart from Save). */
+  declare _density: DensityInfo | null;
+  declare _densityInput: string;
+  declare _densityBusy: boolean;
   declare _loading: boolean;
   declare _error: string;
   /** Changed values (key -> new value). */
@@ -123,6 +131,9 @@ export class SeSettingsTab extends LitElement {
     this.devices = [];
     this.entryId = "";
     this.narrow = false;
+    this._density = null;
+    this._densityInput = "";
+    this._densityBusy = false;
     this._data = null;
     this._loading = false;
     this._error = "";
@@ -213,6 +224,7 @@ export class SeSettingsTab extends LitElement {
       const data = await this.api.settingsGet(entryId);
       if (entryId !== this.entryId) return;
       this._data = data;
+      this._loadDensity(entryId);
       this._resetEdits();
     } catch (err) {
       if (entryId !== this.entryId) return;
@@ -550,6 +562,72 @@ export class SeSettingsTab extends LitElement {
     return html`<ha-list-base class="rows">${defs.map((d) => this._renderField(d, ev.get(d.key), ev))}</ha-list-base>`;
   }
 
+  private async _loadDensity(entryId: string): Promise<void> {
+    this._density = null;
+    try {
+      const density = await this.api.densityGet(entryId);
+      if (entryId !== this.entryId) return;
+      this._density = density;
+      this._densityInput = String(density.override ?? density.physical ?? "");
+    } catch {
+      // ADB not reachable right now: the row is left out
+    }
+  }
+
+  private async _applyDensity(dpi: number | null): Promise<void> {
+    const entryId = this.entryId;
+    this._densityBusy = true;
+    try {
+      const density = await this.api.densitySet(entryId, dpi);
+      if (entryId !== this.entryId) return;
+      this._density = density;
+      this._densityInput = String(density.override ?? density.physical ?? "");
+      toast(this, dpi === null ? "Display density reset" : `Display density set to ${dpi} dpi`);
+    } catch (err) {
+      toastError(this, "Could not change the display density", err);
+    } finally {
+      this._densityBusy = false;
+    }
+  }
+
+  private _renderDensity() {
+    const d = this._density;
+    if (!d?.available) return nothing;
+    const value = Number(this._densityInput);
+    const valid = Number.isInteger(value) && value >= 80 && value <= 640;
+    const current = d.override ?? d.physical;
+    return html`<div class="density">
+      <div class="density-text">
+        <div>Display density</div>
+        <div class="secondary">
+          Size of everything on the screen, in dpi. Factory value ${d.physical ?? "?"} dpi${d.override ? `, now ${d.override}` : ""}.
+          Applies at once over ADB, apart from Save.
+        </div>
+      </div>
+      <div class="density-controls">
+        <input
+          type="number"
+          min="80"
+          max="640"
+          step="5"
+          .value=${this._densityInput}
+          aria-label="Display density in dpi"
+          ?disabled=${this._densityBusy}
+          @input=${(e: Event) => (this._densityInput = (e.target as HTMLInputElement).value)}
+        />
+        <ha-button
+          appearance="plain"
+          ?disabled=${this._densityBusy || !valid || value === current}
+          @click=${() => this._applyDensity(value === d.physical ? null : value)}
+          >Apply</ha-button
+        >
+        <ha-button appearance="plain" ?disabled=${this._densityBusy || !d.override} @click=${() => this._applyDensity(null)}
+          >Factory</ha-button
+        >
+      </div>
+    </div>`;
+  }
+
   /**
    * One card per category, like the cards of Settings → System → Backups → Settings. Settings that
    * cannot be configured right now are left out; a search also finds them, shown disabled with why.
@@ -580,7 +658,9 @@ export class SeSettingsTab extends LitElement {
         (cat) => html`
           <ha-card>
             <h1 class="card-header">${categoryLabel(cat)}</h1>
-            <div class="card-content list">${this._renderRows(groups.get(cat) ?? [], ev)}</div>
+            <div class="card-content list">
+              ${this._renderRows(groups.get(cat) ?? [], ev)} ${cat === "display" && !f ? this._renderDensity() : nothing}
+            </div>
           </ha-card>
         `,
       )}
@@ -886,6 +966,33 @@ export class SeSettingsTab extends LitElement {
     dialogStyles,
     settingRowStyles,
     css`
+      .density {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--ha-space-4);
+        flex-wrap: wrap;
+        padding: var(--ha-space-2) var(--ha-space-4) var(--ha-space-4);
+        border-top: 1px solid var(--divider-color);
+      }
+      .density .secondary {
+        color: var(--secondary-text-color);
+        font-size: var(--ha-font-size-s, 0.875rem);
+      }
+      .density-controls {
+        display: flex;
+        align-items: center;
+        gap: var(--ha-space-1);
+      }
+      .density input {
+        width: 5em;
+        font: inherit;
+        color: var(--primary-text-color);
+        background: var(--card-background-color);
+        border: 1px solid var(--divider-color);
+        border-radius: 6px;
+        padding: 4px 6px;
+      }
       /* below the sticky search bar the cards start 16px down, as on Settings → System → Logs */
       .search + .content {
         padding-top: var(--ha-space-4);

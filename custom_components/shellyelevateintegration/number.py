@@ -9,9 +9,11 @@ from typing import Any
 from homeassistant.components.number import NumberEntity, NumberEntityDescription, NumberMode
 from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import SettingDef
+from .const import SIGNAL_DENSITY_CHANGED
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .entity import (
     ShellyElevateIntegrationEntity,
@@ -173,7 +175,15 @@ class ShellyElevateIntegrationDensityNumber(ShellyElevateIntegrationEntity, Numb
     async def async_added_to_hass(self) -> None:
         """Read the density once the display is set up (adb may still be connecting)."""
         await super().async_added_to_hass()
-        self.device.entry.async_create_background_task(self.hass, self._async_read(), "read display density")
+        entry = self.device.entry
+
+        def _changed() -> None:
+            entry.async_create_background_task(self.hass, self._async_read(), "read display density")
+
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, SIGNAL_DENSITY_CHANGED.format(entry.entry_id), _changed)
+        )
+        _changed()
 
     async def _async_read(self) -> None:
         assert self.device.adb is not None

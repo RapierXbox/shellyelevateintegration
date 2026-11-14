@@ -75,6 +75,8 @@ SIGNAL_SETTINGS_CHANGED: Final = "shellyelevateintegration_settings_changed_{}"
 """Dispatcher signal with the changed settings of one entry (format with the entry id); survives reloads."""
 SIGNAL_SPEAKER: Final = "shellyelevateintegration_speaker_{}"
 """Enrollment progress and recognised speakers of an entry, for the panel."""
+SIGNAL_DENSITY_CHANGED: Final = "shellyelevateintegration_density_changed_{}"
+"""The display density of one entry was changed from the panel (format with the entry id)."""
 
 
 def is_panel_entry(entry: ConfigEntry) -> bool:

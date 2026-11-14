@@ -349,3 +349,22 @@ async def test_revert(hass: HomeAssistant, init_integration: MockConfigEntry, ws
     with patch(f"{WS}.async_revert", AsyncMock(side_effect=RuntimeError("gone"))):
         assert await _subscribe(ws, "revert/run", 1, host=HOST) == [{"type": "error", "error": "gone"}]
     await asyncio.sleep(0)
+
+
+async def test_display_density(
+    hass: HomeAssistant, adb, init_integration: MockConfigEntry, display: FakeDisplay, ws
+) -> None:
+    """The density is read and set over adb; without adb it is not available."""
+    entry_id = init_integration.entry_id
+    result = (await ws("display/density/get", entry_id=entry_id))["result"]
+    assert result == {"available": True, "physical": 240, "override": None}
+    adb.async_get_density.return_value = (240, 200)
+    result = (await ws("display/density/set", entry_id=entry_id, dpi=200))["result"]
+    adb.async_set_density.assert_awaited_with(200)
+    assert result["override"] == 200
+    await ws("display/density/set", entry_id=entry_id, dpi=None)
+    adb.async_set_density.assert_awaited_with(None)
+    assert not (await ws("display/density/set", entry_id=entry_id, dpi=5000))["success"]
+    init_integration.runtime_data.adb = None
+    assert (await ws("display/density/get", entry_id=entry_id))["result"]["available"] is False
+    assert not (await ws("display/density/set", entry_id=entry_id, dpi=200))["success"]

@@ -353,6 +353,12 @@ export type RevertEvent = RevertStepEvent | RevertDoneEvent | { type: "error"; e
 
 const PREFIX = "shellyelevateintegration";
 
+export interface DensityInfo {
+  available: boolean;
+  physical: number | null;
+  override: number | null;
+}
+
 export class ElevateApi {
   /** Takes a getter because Home Assistant replaces the `hass` object on every state change. */
   constructor(private readonly getHass: () => HomeAssistant) {}
@@ -363,6 +369,14 @@ export class ElevateApi {
 
   private ws<T>(type: string, params: Record<string, unknown> = {}): Promise<T> {
     return this.hass.callWS<T>({ type: `${PREFIX}/${type}`, ...params });
+  }
+
+  densityGet(entryId: string): Promise<DensityInfo> {
+    return this.ws("display/density/get", { entry_id: entryId });
+  }
+
+  densitySet(entryId: string, dpi: number | null): Promise<DensityInfo> {
+    return this.ws("display/density/set", { entry_id: entryId, dpi });
   }
 
   // devices / settings
