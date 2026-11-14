@@ -57,10 +57,17 @@ OPT_THERMOSTAT_TOLERANCE: Final = "thermostat_tolerance"
 OPT_THERMOSTAT_MIN_CYCLE: Final = "thermostat_min_cycle"
 OPT_THERMOSTAT_MIN_TEMP: Final = "thermostat_min_temp"
 OPT_THERMOSTAT_MAX_TEMP: Final = "thermostat_max_temp"
+OPT_THERMOSTAT_OVERRIDE: Final = "thermostat_override"
+"""How long a target set by hand in auto mode holds: next_switch, duration or mode_change."""
+OPT_THERMOSTAT_OVERRIDE_MINUTES: Final = "thermostat_override_minutes"
 
 DEFAULT_THERMOSTAT_TOLERANCE: Final = 0.3
 DEFAULT_THERMOSTAT_MIN_TEMP: Final = 5.0
 DEFAULT_THERMOSTAT_MAX_TEMP: Final = 30.0
+OVERRIDE_NEXT_SWITCH: Final = "next_switch"
+OVERRIDE_DURATION: Final = "duration"
+OVERRIDE_MODE_CHANGE: Final = "mode_change"
+DEFAULT_THERMOSTAT_OVERRIDE_MINUTES: Final = 120
 
 DEFAULT_BACKUP_KEEP: Final = 10
 

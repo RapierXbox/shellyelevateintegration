@@ -377,6 +377,8 @@ export interface ThermostatOptions {
   thermostat_min_cycle: number;
   thermostat_min_temp: number;
   thermostat_max_temp: number;
+  thermostat_override: "next_switch" | "duration" | "mode_change";
+  thermostat_override_minutes: number;
 }
 
 export interface ThermostatOptionsResult {

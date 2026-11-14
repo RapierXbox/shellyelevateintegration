@@ -57,6 +57,7 @@ from .const import (
     DEFAULT_BACKUP_KEEP,
     DEFAULT_THERMOSTAT_MAX_TEMP,
     DEFAULT_THERMOSTAT_MIN_TEMP,
+    DEFAULT_THERMOSTAT_OVERRIDE_MINUTES,
     DEFAULT_THERMOSTAT_TOLERANCE,
     DOMAIN,
     OPT_ADB,
@@ -70,11 +71,16 @@ from .const import (
     OPT_THERMOSTAT_MIN_CYCLE,
     OPT_THERMOSTAT_MIN_TEMP,
     OPT_THERMOSTAT_MODE,
+    OPT_THERMOSTAT_OVERRIDE,
+    OPT_THERMOSTAT_OVERRIDE_MINUTES,
     OPT_THERMOSTAT_RELAY,
     OPT_THERMOSTAT_SENSOR,
     OPT_THERMOSTAT_TOLERANCE,
     OPT_UPDATE_CHANNEL,
     OPT_WATCHDOG,
+    OVERRIDE_DURATION,
+    OVERRIDE_MODE_CHANGE,
+    OVERRIDE_NEXT_SWITCH,
     PANEL_UNIQUE_ID,
     UPDATE_CHANNEL_BETA,
     UPDATE_CHANNEL_STABLE,
@@ -750,6 +756,19 @@ class ShellyElevateIntegrationOptionsFlow(OptionsFlowWithReload):
                 vol.Required(OPT_THERMOSTAT_MAX_TEMP, default=DEFAULT_THERMOSTAT_MAX_TEMP): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0, max=50, step=0.5, unit_of_measurement="°C", mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Required(OPT_THERMOSTAT_OVERRIDE, default=OVERRIDE_NEXT_SWITCH): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[OVERRIDE_NEXT_SWITCH, OVERRIDE_DURATION, OVERRIDE_MODE_CHANGE],
+                        translation_key=OPT_THERMOSTAT_OVERRIDE,
+                    )
+                ),
+                vol.Required(
+                    OPT_THERMOSTAT_OVERRIDE_MINUTES, default=DEFAULT_THERMOSTAT_OVERRIDE_MINUTES
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=5, max=1440, step=5, unit_of_measurement="min", mode=selector.NumberSelectorMode.BOX
                     )
                 ),
             }

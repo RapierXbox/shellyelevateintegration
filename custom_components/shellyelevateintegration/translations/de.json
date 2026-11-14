@@ -144,7 +144,9 @@
           "thermostat_tolerance": "Toleranz",
           "thermostat_min_cycle": "Minimale Schaltdauer",
           "thermostat_min_temp": "Minimale Zieltemperatur",
-          "thermostat_max_temp": "Maximale Zieltemperatur"
+          "thermostat_max_temp": "Maximale Zieltemperatur",
+          "thermostat_override": "Manuelle Änderung in Auto",
+          "thermostat_override_minutes": "Haltedauer"
         },
         "data_description": {
           "thermostat_relay": "Relais, das Heizung oder Kühlung schaltet.",
@@ -153,7 +155,9 @@
           "thermostat_min_cycle": "Mindestzeit zwischen zwei Schaltvorgängen (0 = aus).",
           "thermostat_mode": "Heizen schaltet das Relais unter der Zieltemperatur ein, Kühlen über der Zieltemperatur.",
           "thermostat_min_temp": "Niedrigste einstellbare Zieltemperatur.",
-          "thermostat_max_temp": "Höchste einstellbare Zieltemperatur."
+          "thermostat_max_temp": "Höchste einstellbare Zieltemperatur.",
+          "thermostat_override": "Nächster Schaltpunkt: Der Plan übernimmt am nächsten Schaltpunkt wieder. Feste Dauer: nach der Haltedauer. Bis Moduswechsel: Der Plan pausiert, bis Auto erneut gewählt wird.",
+          "thermostat_override_minutes": "Wie lange eine von Hand gesetzte Temperatur gilt (bei „Feste Dauer“)."
         }
       }
     },
@@ -171,6 +175,13 @@
       "options": {
         "stable": "Stabil",
         "beta": "Beta (Vorabversionen)"
+      }
+    },
+    "thermostat_override": {
+      "options": {
+        "next_switch": "Bis zum nächsten Schaltpunkt",
+        "duration": "Für eine feste Dauer",
+        "mode_change": "Bis zum Moduswechsel"
       }
     },
     "thermostat_mode": {

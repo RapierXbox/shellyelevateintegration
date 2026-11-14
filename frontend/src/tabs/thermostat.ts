@@ -31,12 +31,15 @@ const OPTION_LABELS: Record<string, string> = {
   thermostat_min_cycle: "Minimum cycle time",
   thermostat_min_temp: "Minimum target temperature",
   thermostat_max_temp: "Maximum target temperature",
+  thermostat_override: "Target set by hand in auto",
+  thermostat_override_minutes: "Hold time",
 };
 const OPTION_HELPERS: Record<string, string> = {
   enabled: "Creates a thermostat entity that switches a relay of the display based on the temperature.",
   thermostat_sensor: "Leave empty to use the display's own sensor.",
   thermostat_tolerance: "The relay switches at target temperature ± tolerance.",
   thermostat_min_cycle: "Minimum time between two switching operations (0 = off).",
+  thermostat_override: "When the schedule takes over again after a target was set by hand in auto mode.",
 };
 
 const DAY_LABELS: Record<Weekday, string> = {
@@ -329,6 +332,29 @@ export class SeThermostatTab extends LitElement {
       { name: "thermostat_min_cycle", required: true, selector: { number: { min: 0, max: 86400, step: 10, mode: "box", unit_of_measurement: "s" } } },
       { name: "thermostat_min_temp", required: true, selector: { number: { min: -10, max: 40, step: 0.5, mode: "box", unit_of_measurement: "°C" } } },
       { name: "thermostat_max_temp", required: true, selector: { number: { min: 0, max: 50, step: 0.5, mode: "box", unit_of_measurement: "°C" } } },
+      {
+        name: "thermostat_override",
+        required: true,
+        selector: {
+          select: {
+            mode: "dropdown",
+            options: [
+              { value: "next_switch", label: "Until the next switch point" },
+              { value: "duration", label: "For a fixed time" },
+              { value: "mode_change", label: "Until the mode changes" },
+            ],
+          },
+        },
+      },
+      ...(this._form?.thermostat_override === "duration"
+        ? [
+            {
+              name: "thermostat_override_minutes",
+              required: true,
+              selector: { number: { min: 5, max: 1440, step: 5, mode: "box", unit_of_measurement: "min" } },
+            },
+          ]
+        : []),
     ];
   }
 
@@ -374,8 +400,8 @@ export class SeThermostatTab extends LitElement {
     return html`<ha-card header="Weekly schedule">
       <div class="card-content">
         <p class="secondary">
-          The thermostat follows this schedule in <b>auto</b> mode. A switch point holds until the next one; a target set by hand
-          holds until the next switch point.
+          The thermostat follows this schedule in <b>auto</b> mode. A switch point holds until the next one; how long a target set by
+          hand holds is chosen in the settings above.
         </p>
         <p>
           Now: <b>${data.current_temperature ?? "–"} °C</b>${next

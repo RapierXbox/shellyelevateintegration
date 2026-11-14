@@ -287,3 +287,52 @@ async def test_auto_restore(
     assert state.state == HVACMode.AUTO
     assert state.attributes[ATTR_TEMPERATURE] == 19.0
     assert state.attributes["next_change"] == "2026-11-16T17:30:00+01:00"
+
+
+async def test_auto_override_duration(
+    hass: HomeAssistant, display: FakeDisplay, mock_config_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """With a fixed hold time the schedule takes over after it, even before the next switch point."""
+    await hass.config.async_set_time_zone("Europe/Berlin")
+    freezer.move_to("2026-11-16T09:00:00+01:00")  # 08:00 19 °C until 17:30
+    climate = await _setup(hass, mock_config_entry, thermostat_override="duration", thermostat_override_minutes=60)
+    await _call(hass, "set_hvac_mode", climate, **{ATTR_HVAC_MODE: HVACMode.AUTO})
+    await _call(hass, "set_temperature", climate, **{ATTR_TEMPERATURE: 22})
+    state = hass.states.get(climate)
+    assert state.attributes[ATTR_TEMPERATURE] == 22.0
+    assert state.attributes["override_until"] == "2026-11-16T10:00:00+01:00"
+    assert state.attributes["override_active"] is True
+
+    freezer.move_to("2026-11-16T10:00:01+01:00")
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    state = hass.states.get(climate)
+    assert state.attributes[ATTR_TEMPERATURE] == 19.0
+    assert state.attributes["override_active"] is False
+
+
+async def test_auto_override_until_mode_change(
+    hass: HomeAssistant, display: FakeDisplay, mock_config_entry: MockConfigEntry, freezer: FrozenDateTimeFactory
+) -> None:
+    """Until the mode changes: switch points do not replace the manual target; choosing auto again does."""
+    await hass.config.async_set_time_zone("Europe/Berlin")
+    freezer.move_to("2026-11-16T07:00:00+01:00")
+    climate = await _setup(hass, mock_config_entry, thermostat_override="mode_change")
+    await _call(hass, "set_hvac_mode", climate, **{ATTR_HVAC_MODE: HVACMode.AUTO})
+    await _call(hass, "set_temperature", climate, **{ATTR_TEMPERATURE: 20.5})
+    state = hass.states.get(climate)
+    assert state.attributes["override_until"] is None
+    assert state.attributes["override_active"] is True
+
+    freezer.move_to("2026-11-16T08:00:01+01:00")
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+    state = hass.states.get(climate)
+    assert state.attributes[ATTR_TEMPERATURE] == 20.5
+    assert state.attributes["schedule_temperature"] == 19.0
+
+    await _call(hass, "set_hvac_mode", climate, **{ATTR_HVAC_MODE: HVACMode.HEAT})
+    await _call(hass, "set_hvac_mode", climate, **{ATTR_HVAC_MODE: HVACMode.AUTO})
+    state = hass.states.get(climate)
+    assert state.attributes[ATTR_TEMPERATURE] == 19.0
+    assert state.attributes["override_active"] is False

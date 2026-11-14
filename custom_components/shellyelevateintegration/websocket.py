@@ -29,6 +29,8 @@ from .const import (
     OPT_THERMOSTAT_MIN_CYCLE,
     OPT_THERMOSTAT_MIN_TEMP,
     OPT_THERMOSTAT_MODE,
+    OPT_THERMOSTAT_OVERRIDE,
+    OPT_THERMOSTAT_OVERRIDE_MINUTES,
     OPT_THERMOSTAT_RELAY,
     OPT_THERMOSTAT_SENSOR,
     OPT_THERMOSTAT_TOLERANCE,
@@ -748,6 +750,8 @@ _THERMOSTAT_KEYS = (
     OPT_THERMOSTAT_MIN_CYCLE,
     OPT_THERMOSTAT_MIN_TEMP,
     OPT_THERMOSTAT_MAX_TEMP,
+    OPT_THERMOSTAT_OVERRIDE,
+    OPT_THERMOSTAT_OVERRIDE_MINUTES,
 )
 _THERMOSTAT_OPTIONS = vol.Schema(
     {
@@ -758,6 +762,8 @@ _THERMOSTAT_OPTIONS = vol.Schema(
         vol.Required(OPT_THERMOSTAT_MIN_CYCLE): vol.All(vol.Coerce(float), vol.Range(min=0, max=86400)),
         vol.Required(OPT_THERMOSTAT_MIN_TEMP): vol.All(vol.Coerce(float), vol.Range(min=-10, max=40)),
         vol.Required(OPT_THERMOSTAT_MAX_TEMP): vol.All(vol.Coerce(float), vol.Range(min=0, max=50)),
+        vol.Required(OPT_THERMOSTAT_OVERRIDE): vol.In(["next_switch", "duration", "mode_change"]),
+        vol.Required(OPT_THERMOSTAT_OVERRIDE_MINUTES): vol.All(vol.Coerce(float), vol.Range(min=5, max=1440)),
     }
 )
 

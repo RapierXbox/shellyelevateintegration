@@ -4,7 +4,8 @@ The control loop runs in Home Assistant (like the generic thermostat). The tempe
 the display's own sensor unless another temperature sensor is selected in the options.
 
 In auto mode the target follows the weekly schedule of the display (edited in the panel). A target
-set by hand in auto mode holds until the next switch point.
+set by hand in auto mode holds until the next switch point, for a fixed time or until the mode
+changes, as chosen in the options.
 """
 
 from __future__ import annotations
@@ -38,15 +39,21 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 from .const import (
     DEFAULT_THERMOSTAT_MAX_TEMP,
     DEFAULT_THERMOSTAT_MIN_TEMP,
+    DEFAULT_THERMOSTAT_OVERRIDE_MINUTES,
     DEFAULT_THERMOSTAT_TOLERANCE,
     OPT_THERMOSTAT,
     OPT_THERMOSTAT_MAX_TEMP,
     OPT_THERMOSTAT_MIN_CYCLE,
     OPT_THERMOSTAT_MIN_TEMP,
     OPT_THERMOSTAT_MODE,
+    OPT_THERMOSTAT_OVERRIDE,
+    OPT_THERMOSTAT_OVERRIDE_MINUTES,
     OPT_THERMOSTAT_RELAY,
     OPT_THERMOSTAT_SENSOR,
     OPT_THERMOSTAT_TOLERANCE,
+    OVERRIDE_DURATION,
+    OVERRIDE_MODE_CHANGE,
+    OVERRIDE_NEXT_SWITCH,
     SIGNAL_SCHEDULE_CHANGED,
 )
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
@@ -127,6 +134,12 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
         self._schedule_target: float | None = None
         self._next_change: datetime | None = None
         self._override_until: datetime | None = None
+        # until the mode changes: the schedule pauses, there is no end time
+        self._override_hold = False
+        self._override_kind = str(options.get(OPT_THERMOSTAT_OVERRIDE, OVERRIDE_NEXT_SWITCH))
+        self._override_duration = timedelta(
+            minutes=float(options.get(OPT_THERMOSTAT_OVERRIDE_MINUTES, DEFAULT_THERMOSTAT_OVERRIDE_MINUTES))
+        )
         self._cancel_switch_point: Any = None
 
     # ---------------------------------------------------------------- lifecycle
@@ -150,7 +163,7 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
         @callback
         def _schedule_changed() -> None:
             self._schedule = store.get(entry_id)
-            self._override_until = None
+            self._clear_override()
             self._apply_schedule()
             self._control(force=True)
             self.async_write_ha_state()
@@ -208,6 +221,7 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
             attrs["schedule_temperature"] = self._schedule_target
             attrs["next_change"] = self._next_change.isoformat() if self._next_change else None
             attrs["override_until"] = self._override_until.isoformat() if self._override_until else None
+            attrs["override_active"] = self._override_hold or self._override_until is not None
         return attrs
 
     @property
@@ -254,8 +268,7 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
         if (target := kwargs.get(ATTR_TEMPERATURE)) is not None:
             self._attr_target_temperature = float(target)
             if self._attr_hvac_mode == HVACMode.AUTO:
-                # by hand in auto: holds until the next switch point
-                self._override_until = self._next_change
+                self._start_override()
         self._control(force=True)
         self.async_write_ha_state()
 
@@ -273,7 +286,7 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
         if mode == HVACMode.OFF and previous != HVACMode.OFF and self.device.available:
             self._switch(False)
         if mode != previous:
-            self._override_until = None
+            self._clear_override()
         self._apply_schedule()
 
     async def async_turn_on(self) -> None:
@@ -287,25 +300,44 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
     # ---------------------------------------------------------------- schedule
 
     @callback
+    def _clear_override(self) -> None:
+        self._override_until = None
+        self._override_hold = False
+
+    @callback
+    def _start_override(self) -> None:
+        """A target set by hand in auto mode: how long it holds depends on the options."""
+        if self._override_kind == OVERRIDE_MODE_CHANGE:
+            self._override_until, self._override_hold = None, True
+        elif self._override_kind == OVERRIDE_DURATION:
+            self._override_until, self._override_hold = dt_util.now() + self._override_duration, False
+        else:
+            self._override_until, self._override_hold = self._next_change, False
+        self._apply_schedule()
+
+    @callback
     def _apply_schedule(self) -> None:
-        """In auto: take the target of the schedule (unless overridden) and wait for the next switch point."""
+        """In auto: take the target of the schedule (unless overridden) and wait for the next change."""
         self._cancel_pending_switch_point()
         if self._attr_hvac_mode != HVACMode.AUTO:
-            self._schedule_target = self._next_change = self._override_until = None
+            self._schedule_target = self._next_change = None
+            self._clear_override()
             return
         now = dt_util.now()
         self._schedule_target, self._next_change = self._schedule.target_at(now)
         if self._override_until is not None and now >= self._override_until:
             self._override_until = None
-        if self._override_until is None and self._schedule_target is not None:
+        overridden = self._override_hold or self._override_until is not None
+        if not overridden and self._schedule_target is not None:
             self._attr_target_temperature = self._schedule_target
-        if self._next_change is not None:
-            self._cancel_switch_point = async_track_point_in_time(self.hass, self._on_switch_point, self._next_change)
+        # wake at the next switch point or when the override ends, whichever comes first
+        wake = [t for t in (self._next_change, self._override_until) if t is not None]
+        if wake:
+            self._cancel_switch_point = async_track_point_in_time(self.hass, self._on_switch_point, min(wake))
 
     @callback
     def _on_switch_point(self, _now: datetime) -> None:
         self._cancel_switch_point = None
-        self._override_until = None
         self._apply_schedule()
         self._control()
         self.async_write_ha_state()
