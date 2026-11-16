@@ -44,6 +44,8 @@ OPT_BACKUP_KEEP: Final = "backup_keep"
 OPT_WATCHDOG: Final = "watchdog"
 OPT_ADB: Final = "adb"
 OPT_HA_LOGIN: Final = "ha_login"
+# listen again without the wake word when the conversation agent asked a question
+OPT_FOLLOW_UP: Final = "follow_up"
 """Keep the dashboard of the display logged into Home Assistant (on by default)."""
 OPT_HA_LOGIN_USER: Final = "ha_login_user"
 """User the dashboard logs in as; unset uses the default of the panel."""

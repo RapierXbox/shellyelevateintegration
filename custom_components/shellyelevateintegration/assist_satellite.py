@@ -5,6 +5,8 @@ Flow (protocol v1):
   HA runs the pipeline, tells the display to stop streaming (voice.stop_audio),
   drives its voice UI (voice.state) and plays the TTS (voice.play_tts)
   display --voice.tts_finished--> HA
+  when the reply asked a question (continue_conversation) HA then starts the next turn like
+  start_conversation: a new pipeline and voice.start without a wake word
 
 With speaker recognition the display marks voice.wake with speaker_pending and sends who said the
 wake word as voice.speaker. The pipeline waits a moment for it so the conversation agent is told who
@@ -33,7 +35,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import CHANNEL_AUDIO, ShellyElevateIntegrationError
-from .const import DOMAIN
+from .const import DOMAIN, OPT_FOLLOW_UP
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .entity import ShellyElevateIntegrationEntity, ShellyElevateIntegrationEntityDescription
 from .voice import pipeline_select_entity_id, vad_select_entity_id
@@ -108,6 +110,8 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
         self._speaker: asyncio.Future[dict[str, Any]] | None = None
         # bumped by every wake word so a pipeline still waiting for its speaker knows it was replaced
         self._generation = 0
+        # the conversation agent asked a question, so the display listens again once the reply was spoken
+        self._continue_conversation = False
 
     # ---------------------------------------------------------------- HA wiring
 
@@ -178,9 +182,19 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
         elif msg_type == "voice.audio_end":
             self._end_audio()
         elif msg_type == "voice.tts_finished":
-            if self._tts_done is not None:
-                self._tts_done.set()
+            announcing = (done := self._tts_done) is not None
+            if done is not None:
+                done.set()
             self.tts_response_finished()
+            if (
+                self._continue_conversation
+                and not announcing
+                and self.device.entry.options.get(OPT_FOLLOW_UP, True)
+            ):
+                self._continue_conversation = False
+                self.device.entry.async_create_background_task(
+                    self.hass, self._async_continue_conversation(), f"{DOMAIN} follow-up {self.device.device_id}"
+                )
         elif msg_type == "voice.config":
             self._apply_config(message)
         elif msg_type == "settings_changed" and "haVoiceEnabled" in (message.get("changes") or {}):
@@ -308,6 +322,10 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
     def on_pipeline_event(self, event: PipelineEvent) -> None:
         """Forward pipeline progress to the display."""
         data = event.data or {}
+        if event.type is PipelineEventType.RUN_START:
+            self._continue_conversation = False
+        elif event.type is PipelineEventType.INTENT_END:
+            self._continue_conversation = bool((data.get("intent_output") or {}).get("continue_conversation"))
         if event.type in (PipelineEventType.STT_VAD_END, PipelineEventType.STT_END):
             self._end_audio()
             self._send("voice.stop_audio")
@@ -325,6 +343,7 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
             if url:
                 self._send("voice.play_tts", url=async_process_play_media_url(self.hass, url))
         elif event.type is PipelineEventType.ERROR:
+            self._continue_conversation = False
             self._end_audio()
             self._send("voice.stop_audio")
             if data.get("code") == DUPLICATE_WAKE_UP:
@@ -360,6 +379,16 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
     async def async_start_conversation(self, start_announcement: assist_satellite.AssistSatelliteAnnouncement) -> None:
         """Announce, then listen without wake word."""
         await self._async_play_and_wait(start_announcement)
+        await self._async_listen_without_wake_word()
+
+    async def _async_continue_conversation(self) -> None:
+        """The agent's reply was a question: listen for the answer without the wake word."""
+        try:
+            await self._async_listen_without_wake_word()
+        except HomeAssistantError as err:
+            _LOGGER.debug("Could not listen again on %s: %s", self.device.entry.title, err)
+
+    async def _async_listen_without_wake_word(self) -> None:
         self._start_pipeline()
         try:
             await self.device.async_command("voice.start", start_conversation=True)

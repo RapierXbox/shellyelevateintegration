@@ -130,6 +130,9 @@
       "night_mode": {
         "default": "mdi:weather-night"
       },
+      "follow_up": {
+        "default": "mdi:message-reply-text"
+      },
       "screensaver": {
         "default": "mdi:monitor-shimmer"
       },
