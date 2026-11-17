@@ -14,7 +14,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import OPT_RELAYS_AS_LIGHTS
+from .const import OPT_FOLLOW_UP, OPT_RELAYS_AS_LIGHTS
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .entity import (
     ShellyElevateIntegrationEntity,
@@ -78,6 +78,15 @@ NIGHT_MODE = ShellyElevateIntegrationSwitchDescription(
     supported_fn=has_state("night_mode"),
 )
 
+# kept by this integration: the display never sees the conversation agent's reply
+FOLLOW_UP = ShellyElevateIntegrationSwitchDescription(
+    key="follow_up",
+    translation_key="follow_up",
+    entity_category=EntityCategory.CONFIG,
+    state_keys=(),
+    supported_fn=has_setting("haVoiceEnabled"),
+)
+
 
 def create_entities(device: ShellyElevateIntegrationDevice) -> list[SwitchEntity]:
     """Switches the display should have now."""
@@ -87,6 +96,7 @@ def create_entities(device: ShellyElevateIntegrationDevice) -> list[SwitchEntity
         entities += [ShellyElevateIntegrationRelaySwitch(device, idx, relays) for idx in range(relays)]
     entities += build_entities(device, [NIGHT_MODE], ShellyElevateIntegrationNightModeSwitch)
     entities += build_entities(device, SETTING_SWITCHES, ShellyElevateIntegrationSettingSwitch)
+    entities += build_entities(device, [FOLLOW_UP], ShellyElevateIntegrationFollowUpSwitch)
     return entities
 
 
@@ -123,6 +133,30 @@ class ShellyElevateIntegrationNightModeSwitch(ShellyElevateIntegrationEntity, Sw
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off."""
         await self.device.async_command("night_mode.set", on=False)
+
+
+class ShellyElevateIntegrationFollowUpSwitch(ShellyElevateIntegrationEntity, SwitchEntity):
+    """Listen again after a question, stored in the entry options."""
+
+    entity_description: ShellyElevateIntegrationSwitchDescription
+
+    @property
+    def is_on(self) -> bool:
+        """Whether follow-ups are on (the default)."""
+        return bool(self.device.entry.options.get(OPT_FOLLOW_UP, True))
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on."""
+        self._set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off."""
+        self._set(False)
+
+    def _set(self, on: bool) -> None:
+        entry = self.device.entry
+        self.hass.config_entries.async_update_entry(entry, options={**entry.options, OPT_FOLLOW_UP: on})
+        self.async_write_ha_state()
 
 
 class ShellyElevateIntegrationSettingSwitch(ShellyElevateIntegrationEntity, SwitchEntity):

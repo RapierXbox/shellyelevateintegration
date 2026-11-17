@@ -247,6 +247,76 @@ async def test_start_conversation(hass: HomeAssistant, voice_display: FakeDispla
         await hass.async_block_till_done()
 
 
+def _intent_end(continue_conversation: bool) -> PipelineEvent:
+    output = {"continue_conversation": continue_conversation}
+    return PipelineEvent(PipelineEventType.INTENT_END, {"intent_output": output})
+
+
+async def test_follow_up_after_question(hass: HomeAssistant, voice_display: FakeDisplay) -> None:
+    """A reply that asks a question makes the display listen again once, without a wake word."""
+    satellite = _satellite(hass)
+    starts = [("voice.start", {"start_conversation": True})]
+    with patch.object(ShellyElevateIntegrationAssistSatellite, "async_accept_pipeline_from_satellite"):
+        satellite.on_pipeline_event(_intent_end(True))
+        voice_display.client.push({"type": "voice.tts_finished"})
+        await hass.async_block_till_done()
+        await _settle()
+        assert [c for c in voice_display.commands if c[0] == "voice.start"] == starts
+
+        # the flag is used up, the next reply that ends is not followed up
+        voice_display.client.push({"type": "voice.tts_finished"})
+        await hass.async_block_till_done()
+        await _settle()
+        assert [c for c in voice_display.commands if c[0] == "voice.start"] == starts
+
+
+async def test_follow_up_switch(
+    hass: HomeAssistant, voice_display: FakeDisplay, mock_config_entry: MockConfigEntry
+) -> None:
+    """The follow-up switch is on by default, and off the display does not listen again."""
+    satellite = _satellite(hass)
+    switch = entity_id(hass, "switch", "follow_up")
+    assert hass.states.get(switch).state == "on"
+
+    await hass.services.async_call("switch", "turn_off", {"entity_id": switch}, blocking=True)
+    assert hass.states.get(switch).state == "off"
+    assert mock_config_entry.options["follow_up"] is False
+    with patch.object(ShellyElevateIntegrationAssistSatellite, "async_accept_pipeline_from_satellite"):
+        satellite.on_pipeline_event(_intent_end(True))
+        voice_display.client.push({"type": "voice.tts_finished"})
+        await hass.async_block_till_done()
+        await _settle()
+    assert not any(action == "voice.start" for action, _ in voice_display.commands)
+
+    await hass.services.async_call("switch", "turn_on", {"entity_id": switch}, blocking=True)
+    assert hass.states.get(switch).state == "on"
+
+
+async def test_no_follow_up(hass: HomeAssistant, voice_display: FakeDisplay) -> None:
+    """No question, a new run, an error or an announcement in between: the display stays quiet."""
+    satellite = _satellite(hass)
+    with patch.object(ShellyElevateIntegrationAssistSatellite, "async_accept_pipeline_from_satellite"):
+        satellite.on_pipeline_event(_intent_end(False))
+        voice_display.client.push({"type": "voice.tts_finished"})
+
+        satellite.on_pipeline_event(_intent_end(True))
+        satellite.on_pipeline_event(PipelineEvent(PipelineEventType.RUN_START, {}))
+        voice_display.client.push({"type": "voice.tts_finished"})
+
+        satellite.on_pipeline_event(_intent_end(True))
+        satellite.on_pipeline_event(PipelineEvent(PipelineEventType.ERROR, {"code": "tts-failed", "message": "TTS"}))
+        voice_display.client.push({"type": "voice.tts_finished"})
+
+        satellite.on_pipeline_event(_intent_end(True))
+        task = hass.async_create_task(satellite.async_announce(_announcement()))
+        await _settle()
+        voice_display.client.push({"type": "voice.tts_finished"})
+        await task
+        await hass.async_block_till_done()
+        await _settle()
+    assert not any(action == "voice.start" for action, _ in voice_display.commands)
+
+
 async def test_timers(hass: HomeAssistant, voice_display: FakeDisplay) -> None:
     """Assist timers are shown on the display."""
     timer = SimpleNamespace(id="t1", name=None, seconds=300, seconds_left=299, is_active=True)

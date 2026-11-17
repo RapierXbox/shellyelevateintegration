@@ -491,6 +491,9 @@
       "night_mode": {
         "name": "Night mode"
       },
+      "follow_up": {
+        "name": "Follow-up questions"
+      },
       "screensaver": {
         "name": "Screensaver enabled"
       },

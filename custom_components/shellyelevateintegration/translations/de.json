@@ -491,6 +491,9 @@
       "night_mode": {
         "name": "Nachtmodus"
       },
+      "follow_up": {
+        "name": "Rückfragen"
+      },
       "screensaver": {
         "name": "Bildschirmschoner aktiviert"
       },
