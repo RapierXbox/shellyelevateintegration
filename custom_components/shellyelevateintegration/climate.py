@@ -100,7 +100,6 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
 
     entity_description: ShellyElevateIntegrationClimateDescription
 
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 0.5
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
@@ -126,7 +125,7 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
         self._attr_max_temp = float(options.get(OPT_THERMOSTAT_MAX_TEMP, DEFAULT_THERMOSTAT_MAX_TEMP))
         self._attr_hvac_modes = [HVACMode.OFF, self._active_mode, HVACMode.AUTO]
         self._attr_hvac_mode = HVACMode.OFF
-        self._attr_target_temperature = DEFAULT_TARGET
+        self._target: float | None = DEFAULT_TARGET
         self._external_temp: float | None = None
         self._last_switch: datetime | None = None
         self._cancel_retry: Any = None
@@ -151,7 +150,7 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
             if last.state in self._attr_hvac_modes:
                 self._attr_hvac_mode = HVACMode(last.state)
             if (target := last.attributes.get(ATTR_TEMPERATURE)) is not None:
-                self._attr_target_temperature = float(target)
+                self._target = float(target)
         if self._sensor is not None:
             self._external_temp = self._read_sensor()
             self.async_on_remove(async_track_state_change_event(self.hass, self._sensor, self._on_sensor))
@@ -190,8 +189,36 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
 
     # ---------------------------------------------------------------- state
 
+    # Home Assistant 2026.11 reads the native_* members, older versions (down to the minimum in hacs.json)
+    # the plain ones. A class that provides both is served the native ones without a deprecation warning.
+
+    @property
+    def native_temperature_unit(self) -> str:
+        """Temperatures are in °C."""
+        return UnitOfTemperature.CELSIUS
+
+    @property
+    def temperature_unit(self) -> str:
+        """Temperatures are in °C (Home Assistant before 2026.11)."""
+        return self.native_temperature_unit
+
+    @property
+    def native_target_temperature(self) -> float | None:
+        """Temperature the relay is switched for."""
+        return self._target
+
+    @property
+    def target_temperature(self) -> float | None:
+        """Temperature the relay is switched for (Home Assistant before 2026.11)."""
+        return self.native_target_temperature
+
     @property
     def current_temperature(self) -> float | None:
+        """Temperature of the selected source (Home Assistant before 2026.11)."""
+        return self.native_current_temperature
+
+    @property
+    def native_current_temperature(self) -> float | None:
         """Temperature of the selected source."""
         if self._sensor is not None:
             return self._external_temp
@@ -266,7 +293,7 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
         if (mode := kwargs.get(ATTR_HVAC_MODE)) is not None:
             self._set_mode(HVACMode(mode))
         if (target := kwargs.get(ATTR_TEMPERATURE)) is not None:
-            self._attr_target_temperature = float(target)
+            self._target = float(target)
             if self._attr_hvac_mode == HVACMode.AUTO:
                 self._start_override()
         self._control(force=True)
@@ -329,7 +356,7 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
             self._override_until = None
         overridden = self._override_hold or self._override_until is not None
         if not overridden and self._schedule_target is not None:
-            self._attr_target_temperature = self._schedule_target
+            self._target = self._schedule_target
         # wake at the next switch point or when the override ends, whichever comes first
         wake = [t for t in (self._next_change, self._override_until) if t is not None]
         if wake:
@@ -352,7 +379,7 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
         if self._attr_hvac_mode == HVACMode.OFF:
             # Off means hands off: the relay stays usable as a normal switch.
             return
-        temp, target = self.current_temperature, self._attr_target_temperature
+        temp, target = self.native_current_temperature, self._target
         if temp is None or target is None:
             return
         if self._active_mode == HVACMode.HEAT:
