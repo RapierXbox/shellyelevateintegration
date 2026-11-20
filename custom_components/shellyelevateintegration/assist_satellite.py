@@ -54,6 +54,12 @@ SPEAKER_SLACK = 1.0
 SPEAKER_KNOWN = "The person speaking is {name}."
 # always sent: the chat log would otherwise keep the previous speaker for the next turns
 SPEAKER_UNKNOWN = "The person speaking could not be identified."
+# the display rings a finished timer for 2 min, a wake word silences it
+RING_SECONDS = 125
+TIMER_SILENCED = (
+    "{timer} finished {ago} seconds ago and its alarm rang until the wake word or a touch silenced it; it is quiet "
+    "now. If asked to stop it, say it has stopped, without calling a timer tool."
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -112,6 +118,8 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
         self._generation = 0
         # the conversation agent asked a question, so the display listens again once the reply was spoken
         self._continue_conversation = False
+        # name and loop time of the last finished timer, while the display may still ring it
+        self._rang: tuple[str, float] | None = None
 
     # ---------------------------------------------------------------- HA wiring
 
@@ -268,6 +276,7 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
                         # a newer wake word took over while this one waited
                         return
                     self._add_speaker_prompt(wake)
+                self._add_timer_prompt()
                 await self.async_accept_pipeline_from_satellite(
                     _stream(), start_stage=PipelineStage.STT, wake_word_phrase=wake_word_phrase
                 )
@@ -295,6 +304,22 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
                 line += f" Their Home Assistant person is {person}."
         else:
             line = SPEAKER_UNKNOWN
+        prompt = self._extra_system_prompt
+        self._extra_system_prompt = f"{prompt}\n{line}" if prompt else line
+
+    def _add_timer_prompt(self) -> None:
+        """A wake word while a finished timer rings silenced it: tell the agent so "stop" makes sense.
+
+        Every wake in the ring window gets it, the first one may have been misheard.
+        """
+        if self._rang is None:
+            return
+        name, finished = self._rang
+        ago = self.hass.loop.time() - finished
+        if ago > RING_SECONDS:
+            self._rang = None
+            return
+        line = TIMER_SILENCED.format(timer=f'The "{name}" timer' if name else "A timer", ago=round(ago))
         prompt = self._extra_system_prompt
         self._extra_system_prompt = f"{prompt}\n{line}" if prompt else line
 
@@ -426,3 +451,14 @@ class ShellyElevateIntegrationAssistSatellite(ShellyElevateIntegrationEntity, as
                 "active": timer.is_active,
             },
         )
+        if event_type is TimerEventType.FINISHED:
+            self._rang = (timer.name or "", self.hass.loop.time())
+            # the display only rings, so say which timer it was. the app rings again once this is spoken
+            message = f"Timer done: {timer.name}." if timer.name else "Your timer is done."
+            self.hass.async_create_task(self._async_announce_timer(message))
+
+    async def _async_announce_timer(self, message: str) -> None:
+        try:
+            await self.async_internal_announce(message=message, preannounce=False)
+        except HomeAssistantError as err:  # SatelliteBusyError too
+            _LOGGER.debug("Timer announcement on %s failed: %s", self.device.entry.title, err)
