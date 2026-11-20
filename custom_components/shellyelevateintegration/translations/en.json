@@ -410,6 +410,9 @@
       "wake_word_sensitivity": {
         "name": "Wake word sensitivity"
       },
+      "voice_bubble_scale": {
+        "name": "Voice bubble size"
+      },
       "voice_max_record": {
         "name": "Maximum recording time"
       }

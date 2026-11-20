@@ -85,6 +85,9 @@
       "wake_word_sensitivity": {
         "default": "mdi:account-voice"
       },
+      "voice_bubble_scale": {
+        "default": "mdi:format-size"
+      },
       "voice_max_record": {
         "default": "mdi:record-rec"
       }

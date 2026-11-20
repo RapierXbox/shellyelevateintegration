@@ -410,6 +410,9 @@
       "wake_word_sensitivity": {
         "name": "Empfindlichkeit des Aktivierungsworts"
       },
+      "voice_bubble_scale": {
+        "name": "Größe der Sprachblase"
+      },
       "voice_max_record": {
         "name": "Maximale Aufnahmedauer"
       }

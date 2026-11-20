@@ -118,6 +118,7 @@ APP_RULES: list[dict[str, Any]] = [
         requires=[_cap("microphone")],
     ),
     _r("voiceAssistantMaxRecordSeconds", "int", 10, visible_if=[_VOICE]),
+    _r("voiceBubbleScale", "int", 100, visible_if=[_VOICE]),
     _r("voiceAssistantMuted", "bool", False, visible_if=[_VOICE]),
     _r("voiceWakeEnabled", "bool", True, visible_if=[_VOICE]),
     _r("voiceWakeModelName", "string", "", visible_if=[_VOICE, _WAKE]),
