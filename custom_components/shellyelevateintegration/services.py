@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Coroutine, Iterable
 from datetime import UTC, datetime
+import hashlib
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntryState
@@ -48,6 +50,8 @@ ATTR_DURATION = "duration"
 ATTR_LEVEL = "level"
 ATTR_COMMAND = "command"
 ATTR_VERSION = "version"
+ATTR_PATH = "path"
+ATTR_SHA256 = "sha256"
 ATTR_REBOOT = "reboot"
 ATTR_DISABLE_ADB = "disable_adb"
 ATTR_REMOVE = "remove_from_home_assistant"
@@ -68,6 +72,7 @@ SERVICE_NAVIGATE = "navigate"
 SERVICE_MESSAGE = "show_message"
 SERVICE_ADB_SHELL = "adb_shell"
 SERVICE_INSTALL_APP = "install_app"
+SERVICE_INSTALL_APK = "install_apk"
 SERVICE_REVERT = "revert_display"
 
 
@@ -325,6 +330,30 @@ def async_setup_services(hass: HomeAssistant) -> None:
             device.permissions.async_after_update()
         return {"version": installed.version}
 
+    async def install_apk(call: ServiceCall) -> ServiceResponse:
+        """Install any APK file from the Home Assistant config folder (or an allowed folder) over ADB."""
+        device = _get_device(hass, call.data[ATTR_DEVICE_ID])
+        if device.adb is None:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="adb_disabled")
+        path = Path(hass.config.path(call.data[ATTR_PATH])).resolve()
+        config_dir = Path(hass.config.config_dir).resolve()
+        if not (path.is_relative_to(config_dir) or hass.config.is_allowed_path(str(path))):
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="apk_path_not_allowed",
+                translation_placeholders={"path": str(path)},
+            )
+        apk = await hass.async_add_executor_job(lambda: path.read_bytes() if path.is_file() else None)
+        if not apk:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN, translation_key="apk_not_found", translation_placeholders={"path": str(path)}
+            )
+        digest = hashlib.sha256(apk).hexdigest()
+        if (expected := call.data.get(ATTR_SHA256)) and expected.lower() != digest:
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="apk_checksum_mismatch")
+        await device.adb.async_install_apk(apk)
+        return {"path": str(path), "bytes": len(apk), "sha256": digest}
+
     async def revert_display(call: ServiceCall) -> ServiceResponse:
         device = _get_device(hass, call.data[ATTR_DEVICE_ID])
         options = RevertOptions(
@@ -446,6 +475,12 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 vol.Optional(ATTR_ACCEPT_WIFI, default=False): cv.boolean,
             }
         ),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+    register_admin(
+        SERVICE_INSTALL_APK,
+        install_apk,
+        vol.Schema({**one, vol.Required(ATTR_PATH): cv.string, vol.Optional(ATTR_SHA256): cv.string}),
         supports_response=SupportsResponse.OPTIONAL,
     )
     register_admin(

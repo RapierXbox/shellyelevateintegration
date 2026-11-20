@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -170,7 +171,7 @@ async def test_navigate_and_message(
 async def test_adb_actions_without_adb(hass: HomeAssistant, init_integration: MockConfigEntry) -> None:
     """ADB actions need ADB."""
     device_id = _device_id(hass, init_integration)
-    for service, data in (("adb_shell", {"command": "id"}), ("install_app", {})):
+    for service, data in (("adb_shell", {"command": "id"}), ("install_app", {}), ("install_apk", {"path": "app.apk"})):
         with pytest.raises(ServiceValidationError) as err:
             await _call(hass, service, {ATTR_DEVICE_ID: device_id, **data})
         assert err.value.translation_key == "adb_disabled"
@@ -229,3 +230,36 @@ async def test_unknown_devices(hass: HomeAssistant, init_integration: MockConfig
     with pytest.raises(HomeAssistantError) as err:
         await _call(hass, "get_settings", {ATTR_DEVICE_ID: device_id})
     assert err.value.translation_key == "device_not_loaded"
+
+
+async def test_install_apk(
+    hass: HomeAssistant, display: FakeDisplay, adb: MagicMock, mock_config_entry: MockConfigEntry, tmp_path
+) -> None:
+    """Any APK from the config folder over ADB, with an optional checksum; nothing outside the allowed folders."""
+    import hashlib
+
+    from .conftest import setup_entry
+
+    await setup_entry(hass, mock_config_entry)
+    device_id = _device_id(hass, mock_config_entry)
+    adb.async_install_apk = AsyncMock()
+    folder = Path(hass.config.path("apps"))
+    await hass.async_add_executor_job(lambda: folder.mkdir(parents=True, exist_ok=True))
+    await hass.async_add_executor_job((folder / "app.apk").write_bytes, b"APK")
+    digest = hashlib.sha256(b"APK").hexdigest()
+
+    result = await _call(hass, "install_apk", {ATTR_DEVICE_ID: device_id, "path": "apps/app.apk", "sha256": digest})
+    assert result["sha256"] == digest and result["bytes"] == 3
+    adb.async_install_apk.assert_awaited_once_with(b"APK")
+
+    with pytest.raises(ServiceValidationError) as err:
+        await _call(hass, "install_apk", {ATTR_DEVICE_ID: device_id, "path": "apps/app.apk", "sha256": "0" * 64})
+    assert err.value.translation_key == "apk_checksum_mismatch"
+    with pytest.raises(ServiceValidationError) as err:
+        await _call(hass, "install_apk", {ATTR_DEVICE_ID: device_id, "path": "apps/missing.apk"})
+    assert err.value.translation_key == "apk_not_found"
+    outside = tmp_path / "x.apk"
+    await hass.async_add_executor_job(outside.write_bytes, b"APK")
+    with pytest.raises(ServiceValidationError) as err:
+        await _call(hass, "install_apk", {ATTR_DEVICE_ID: device_id, "path": str(outside)})
+    assert err.value.translation_key == "apk_path_not_allowed"

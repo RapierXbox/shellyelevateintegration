@@ -200,6 +200,22 @@ install_app:
       selector:
         text:
 
+install_apk:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: shellyelevateintegration
+    path:
+      required: true
+      example: hapanel/hapanel.apk
+      selector:
+        text:
+    sha256:
+      selector:
+        text:
+
 revert_display:
   fields:
     device_id:
