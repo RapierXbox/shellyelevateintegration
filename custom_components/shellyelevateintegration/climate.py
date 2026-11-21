@@ -2,6 +2,10 @@
 
 The control loop runs in Home Assistant (like the generic thermostat). The temperature comes from
 the display's own sensor unless another temperature sensor is selected in the options.
+
+In auto mode the target follows the weekly schedule of the display (edited in the panel). A target
+set by hand in auto mode holds until the next switch point, for a fixed time or until the mode
+changes, as chosen in the options.
 """
 
 from __future__ import annotations
@@ -21,8 +25,13 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_point_in_time,
+    async_track_state_change_event,
+)
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import TemperatureConverter
@@ -30,18 +39,26 @@ from homeassistant.util.unit_conversion import TemperatureConverter
 from .const import (
     DEFAULT_THERMOSTAT_MAX_TEMP,
     DEFAULT_THERMOSTAT_MIN_TEMP,
+    DEFAULT_THERMOSTAT_OVERRIDE_MINUTES,
     DEFAULT_THERMOSTAT_TOLERANCE,
     OPT_THERMOSTAT,
     OPT_THERMOSTAT_MAX_TEMP,
     OPT_THERMOSTAT_MIN_CYCLE,
     OPT_THERMOSTAT_MIN_TEMP,
     OPT_THERMOSTAT_MODE,
+    OPT_THERMOSTAT_OVERRIDE,
+    OPT_THERMOSTAT_OVERRIDE_MINUTES,
     OPT_THERMOSTAT_RELAY,
     OPT_THERMOSTAT_SENSOR,
     OPT_THERMOSTAT_TOLERANCE,
+    OVERRIDE_DURATION,
+    OVERRIDE_MODE_CHANGE,
+    OVERRIDE_NEXT_SWITCH,
+    SIGNAL_SCHEDULE_CHANGED,
 )
 from .device import ShellyElevateIntegrationConfigEntry, ShellyElevateIntegrationDevice
 from .entity import ShellyElevateIntegrationEntity, ShellyElevateIntegrationEntityDescription
+from .schedule import DEFAULT_SCHEDULE, WeekSchedule, async_get_schedule_store
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -83,7 +100,6 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
 
     entity_description: ShellyElevateIntegrationClimateDescription
 
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 0.5
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
@@ -107,12 +123,23 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
         self._min_cycle = timedelta(seconds=float(options.get(OPT_THERMOSTAT_MIN_CYCLE, 0)))
         self._attr_min_temp = float(options.get(OPT_THERMOSTAT_MIN_TEMP, DEFAULT_THERMOSTAT_MIN_TEMP))
         self._attr_max_temp = float(options.get(OPT_THERMOSTAT_MAX_TEMP, DEFAULT_THERMOSTAT_MAX_TEMP))
-        self._attr_hvac_modes = [HVACMode.OFF, self._active_mode]
+        self._attr_hvac_modes = [HVACMode.OFF, self._active_mode, HVACMode.AUTO]
         self._attr_hvac_mode = HVACMode.OFF
-        self._attr_target_temperature = DEFAULT_TARGET
+        self._target: float | None = DEFAULT_TARGET
         self._external_temp: float | None = None
         self._last_switch: datetime | None = None
         self._cancel_retry: Any = None
+        self._schedule: WeekSchedule = DEFAULT_SCHEDULE
+        self._schedule_target: float | None = None
+        self._next_change: datetime | None = None
+        self._override_until: datetime | None = None
+        # until the mode changes: the schedule pauses, there is no end time
+        self._override_hold = False
+        self._override_kind = str(options.get(OPT_THERMOSTAT_OVERRIDE, OVERRIDE_NEXT_SWITCH))
+        self._override_duration = timedelta(
+            minutes=float(options.get(OPT_THERMOSTAT_OVERRIDE_MINUTES, DEFAULT_THERMOSTAT_OVERRIDE_MINUTES))
+        )
+        self._cancel_switch_point: Any = None
 
     # ---------------------------------------------------------------- lifecycle
 
@@ -123,12 +150,36 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
             if last.state in self._attr_hvac_modes:
                 self._attr_hvac_mode = HVACMode(last.state)
             if (target := last.attributes.get(ATTR_TEMPERATURE)) is not None:
-                self._attr_target_temperature = float(target)
+                self._target = float(target)
         if self._sensor is not None:
             self._external_temp = self._read_sensor()
             self.async_on_remove(async_track_state_change_event(self.hass, self._sensor, self._on_sensor))
         self.async_on_remove(self._cancel_pending_retry)
+        store = await async_get_schedule_store(self.hass)
+        entry_id = self.device.entry.entry_id
+        self._schedule = store.get(entry_id)
+
+        @callback
+        def _schedule_changed() -> None:
+            self._schedule = store.get(entry_id)
+            self._clear_override()
+            self._apply_schedule()
+            self._control(force=True)
+            self.async_write_ha_state()
+
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, SIGNAL_SCHEDULE_CHANGED.format(entry_id), _schedule_changed)
+        )
+        self.async_on_remove(self._cancel_pending_switch_point)
+        # an override does not survive a restart: auto starts from the schedule
+        self._apply_schedule()
         self._control()
+
+    @callback
+    def _cancel_pending_switch_point(self) -> None:
+        if self._cancel_switch_point is not None:
+            self._cancel_switch_point()
+            self._cancel_switch_point = None
 
     @callback
     def _cancel_pending_retry(self) -> None:
@@ -138,8 +189,36 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
 
     # ---------------------------------------------------------------- state
 
+    # Home Assistant 2026.11 reads the native_* members, older versions (down to the minimum in hacs.json)
+    # the plain ones. A class that provides both is served the native ones without a deprecation warning.
+
+    @property
+    def native_temperature_unit(self) -> str:
+        """Temperatures are in °C."""
+        return UnitOfTemperature.CELSIUS
+
+    @property
+    def temperature_unit(self) -> str:
+        """Temperatures are in °C (Home Assistant before 2026.11)."""
+        return self.native_temperature_unit
+
+    @property
+    def native_target_temperature(self) -> float | None:
+        """Temperature the relay is switched for."""
+        return self._target
+
+    @property
+    def target_temperature(self) -> float | None:
+        """Temperature the relay is switched for (Home Assistant before 2026.11)."""
+        return self.native_target_temperature
+
     @property
     def current_temperature(self) -> float | None:
+        """Temperature of the selected source (Home Assistant before 2026.11)."""
+        return self.native_current_temperature
+
+    @property
+    def native_current_temperature(self) -> float | None:
         """Temperature of the selected source."""
         if self._sensor is not None:
             return self._external_temp
@@ -164,7 +243,13 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Which sensor and relay are used."""
-        return {"temperature_sensor": self._sensor or "display", "relay": self._relay + 1}
+        attrs: dict[str, Any] = {"temperature_sensor": self._sensor or "display", "relay": self._relay + 1}
+        if self._attr_hvac_mode == HVACMode.AUTO:
+            attrs["schedule_temperature"] = self._schedule_target
+            attrs["next_change"] = self._next_change.isoformat() if self._next_change else None
+            attrs["override_until"] = self._override_until.isoformat() if self._override_until else None
+            attrs["override_active"] = self._override_hold or self._override_until is not None
+        return attrs
 
     @property
     def _relay_on(self) -> bool:
@@ -208,7 +293,9 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
         if (mode := kwargs.get(ATTR_HVAC_MODE)) is not None:
             self._set_mode(HVACMode(mode))
         if (target := kwargs.get(ATTR_TEMPERATURE)) is not None:
-            self._attr_target_temperature = float(target)
+            self._target = float(target)
+            if self._attr_hvac_mode == HVACMode.AUTO:
+                self._start_override()
         self._control(force=True)
         self.async_write_ha_state()
 
@@ -225,6 +312,9 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
         # Unconditionally: the state may not show yet that our last command switched it on.
         if mode == HVACMode.OFF and previous != HVACMode.OFF and self.device.available:
             self._switch(False)
+        if mode != previous:
+            self._clear_override()
+        self._apply_schedule()
 
     async def async_turn_on(self) -> None:
         """Start regulating."""
@@ -233,6 +323,51 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
     async def async_turn_off(self) -> None:
         """Stop regulating."""
         await self.async_set_hvac_mode(HVACMode.OFF)
+
+    # ---------------------------------------------------------------- schedule
+
+    @callback
+    def _clear_override(self) -> None:
+        self._override_until = None
+        self._override_hold = False
+
+    @callback
+    def _start_override(self) -> None:
+        """A target set by hand in auto mode: how long it holds depends on the options."""
+        if self._override_kind == OVERRIDE_MODE_CHANGE:
+            self._override_until, self._override_hold = None, True
+        elif self._override_kind == OVERRIDE_DURATION:
+            self._override_until, self._override_hold = dt_util.now() + self._override_duration, False
+        else:
+            self._override_until, self._override_hold = self._next_change, False
+        self._apply_schedule()
+
+    @callback
+    def _apply_schedule(self) -> None:
+        """In auto: take the target of the schedule (unless overridden) and wait for the next change."""
+        self._cancel_pending_switch_point()
+        if self._attr_hvac_mode != HVACMode.AUTO:
+            self._schedule_target = self._next_change = None
+            self._clear_override()
+            return
+        now = dt_util.now()
+        self._schedule_target, self._next_change = self._schedule.target_at(now)
+        if self._override_until is not None and now >= self._override_until:
+            self._override_until = None
+        overridden = self._override_hold or self._override_until is not None
+        if not overridden and self._schedule_target is not None:
+            self._target = self._schedule_target
+        # wake at the next switch point or when the override ends, whichever comes first
+        wake = [t for t in (self._next_change, self._override_until) if t is not None]
+        if wake:
+            self._cancel_switch_point = async_track_point_in_time(self.hass, self._on_switch_point, min(wake))
+
+    @callback
+    def _on_switch_point(self, _now: datetime) -> None:
+        self._cancel_switch_point = None
+        self._apply_schedule()
+        self._control()
+        self.async_write_ha_state()
 
     # ---------------------------------------------------------------- control loop
 
@@ -244,7 +379,7 @@ class ShellyElevateIntegrationThermostat(ShellyElevateIntegrationEntity, Climate
         if self._attr_hvac_mode == HVACMode.OFF:
             # Off means hands off: the relay stays usable as a normal switch.
             return
-        temp, target = self.current_temperature, self._attr_target_temperature
+        temp, target = self.native_current_temperature, self._target
         if temp is None or target is None:
             return
         if self._active_mode == HVACMode.HEAT:

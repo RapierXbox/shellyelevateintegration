@@ -57,6 +57,7 @@ from .const import (
     DEFAULT_BACKUP_KEEP,
     DEFAULT_THERMOSTAT_MAX_TEMP,
     DEFAULT_THERMOSTAT_MIN_TEMP,
+    DEFAULT_THERMOSTAT_OVERRIDE_MINUTES,
     DEFAULT_THERMOSTAT_TOLERANCE,
     DOMAIN,
     OPT_ADB,
@@ -70,17 +71,23 @@ from .const import (
     OPT_THERMOSTAT_MIN_CYCLE,
     OPT_THERMOSTAT_MIN_TEMP,
     OPT_THERMOSTAT_MODE,
+    OPT_THERMOSTAT_OVERRIDE,
+    OPT_THERMOSTAT_OVERRIDE_MINUTES,
     OPT_THERMOSTAT_RELAY,
     OPT_THERMOSTAT_SENSOR,
     OPT_THERMOSTAT_TOLERANCE,
     OPT_UPDATE_CHANNEL,
     OPT_WATCHDOG,
+    OVERRIDE_DURATION,
+    OVERRIDE_MODE_CHANGE,
+    OVERRIDE_NEXT_SWITCH,
     PANEL_UNIQUE_ID,
     UPDATE_CHANNEL_BETA,
     UPDATE_CHANNEL_STABLE,
     is_panel_entry,
 )
 from .settings.profiles import ProfileManager, async_get_profile_manager
+from .thermostat_options import thermostat_options_error
 
 if TYPE_CHECKING:
     # ha 2026.9+ aliases voluptuous to probatio at runtime
@@ -704,11 +711,8 @@ class ShellyElevateIntegrationOptionsFlow(OptionsFlowWithReload):
         errors: dict[str, str] = {}
         if user_input is not None:
             caps = self._capabilities()
-            if user_input[OPT_THERMOSTAT_MIN_TEMP] >= user_input[OPT_THERMOSTAT_MAX_TEMP]:
-                errors["base"] = "invalid_temp_range"
-            elif not user_input.get(OPT_THERMOSTAT_SENSOR) and caps is not None and not caps.temperature:
-                # XL, X2i and X1i have no temperature sensor of their own
-                errors[OPT_THERMOSTAT_SENSOR] = "sensor_required"
+            if error := thermostat_options_error(user_input, None if caps is None else caps.temperature):
+                errors[error[0]] = error[1]
             else:
                 options = {**self._options, **user_input}
                 if not user_input.get(OPT_THERMOSTAT_SENSOR):
@@ -752,6 +756,19 @@ class ShellyElevateIntegrationOptionsFlow(OptionsFlowWithReload):
                 vol.Required(OPT_THERMOSTAT_MAX_TEMP, default=DEFAULT_THERMOSTAT_MAX_TEMP): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=0, max=50, step=0.5, unit_of_measurement="°C", mode=selector.NumberSelectorMode.BOX
+                    )
+                ),
+                vol.Required(OPT_THERMOSTAT_OVERRIDE, default=OVERRIDE_NEXT_SWITCH): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[OVERRIDE_NEXT_SWITCH, OVERRIDE_DURATION, OVERRIDE_MODE_CHANGE],
+                        translation_key=OPT_THERMOSTAT_OVERRIDE,
+                    )
+                ),
+                vol.Required(
+                    OPT_THERMOSTAT_OVERRIDE_MINUTES, default=DEFAULT_THERMOSTAT_OVERRIDE_MINUTES
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=5, max=1440, step=5, unit_of_measurement="min", mode=selector.NumberSelectorMode.BOX
                     )
                 ),
             }

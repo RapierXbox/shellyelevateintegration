@@ -353,6 +353,49 @@ export type RevertEvent = RevertStepEvent | RevertDoneEvent | { type: "error"; e
 
 const PREFIX = "shellyelevateintegration";
 
+export interface SwitchPoint {
+  time: string;
+  temperature: number;
+}
+
+export const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+export type Weekday = (typeof WEEKDAYS)[number];
+export type WeekSchedule = Record<Weekday, SwitchPoint[]>;
+
+export interface ThermostatSummary {
+  entry_id: string;
+  name: string;
+  loaded: boolean;
+  entity_id: string | null;
+}
+
+export interface ThermostatOptions {
+  thermostat_relay: string;
+  thermostat_sensor?: string | null;
+  thermostat_mode: "heat" | "cool";
+  thermostat_tolerance: number;
+  thermostat_min_cycle: number;
+  thermostat_min_temp: number;
+  thermostat_max_temp: number;
+  thermostat_override: "next_switch" | "duration" | "mode_change";
+  thermostat_override_minutes: number;
+}
+
+export interface ThermostatOptionsResult {
+  enabled: boolean;
+  options: ThermostatOptions;
+  relays: number;
+  own_sensor: boolean;
+  entity_id: string | null;
+}
+
+export interface ScheduleGetResult {
+  schedule: WeekSchedule;
+  default: boolean;
+  current_temperature: number | null;
+  next_change: string | null;
+}
+
 export class ElevateApi {
   /** Takes a getter because Home Assistant replaces the `hass` object on every state change. */
   constructor(private readonly getHass: () => HomeAssistant) {}
@@ -363,6 +406,27 @@ export class ElevateApi {
 
   private ws<T>(type: string, params: Record<string, unknown> = {}): Promise<T> {
     return this.hass.callWS<T>({ type: `${PREFIX}/${type}`, ...params });
+  }
+
+  // thermostat schedule
+  async thermostats(): Promise<ThermostatSummary[]> {
+    return (await this.ws<{ thermostats: ThermostatSummary[] }>("thermostats")).thermostats;
+  }
+
+  thermostatOptionsGet(entryId: string): Promise<ThermostatOptionsResult> {
+    return this.ws("thermostat/options/get", { entry_id: entryId });
+  }
+
+  thermostatOptionsSet(entryId: string, enabled: boolean, options?: Partial<ThermostatOptions>): Promise<{ changed: boolean }> {
+    return this.ws("thermostat/options/set", { entry_id: entryId, enabled, ...(options ? { options } : {}) });
+  }
+
+  scheduleGet(entryId: string): Promise<ScheduleGetResult> {
+    return this.ws("thermostat/schedule/get", { entry_id: entryId });
+  }
+
+  async scheduleSet(entryId: string, schedule: WeekSchedule): Promise<WeekSchedule> {
+    return (await this.ws<{ schedule: WeekSchedule }>("thermostat/schedule/set", { entry_id: entryId, schedule })).schedule;
   }
 
   // devices / settings

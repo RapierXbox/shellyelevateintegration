@@ -144,7 +144,9 @@
           "thermostat_tolerance": "Tolerance",
           "thermostat_min_cycle": "Minimum cycle time",
           "thermostat_min_temp": "Minimum target temperature",
-          "thermostat_max_temp": "Maximum target temperature"
+          "thermostat_max_temp": "Maximum target temperature",
+          "thermostat_override": "How a target set by hand in auto mode holds",
+          "thermostat_override_minutes": "Hold time"
         },
         "data_description": {
           "thermostat_relay": "Relay that switches the heater or cooler.",
@@ -153,7 +155,9 @@
           "thermostat_min_cycle": "Minimum time between two switching operations (0 = off).",
           "thermostat_mode": "Heat switches the relay on below the target temperature, cool switches it on above it.",
           "thermostat_min_temp": "Lowest target temperature that can be set.",
-          "thermostat_max_temp": "Highest target temperature that can be set."
+          "thermostat_max_temp": "Highest target temperature that can be set.",
+          "thermostat_override": "Next switch point: the schedule takes over again at its next switch point. Fixed time: after the hold time. Until the mode changes: the schedule pauses until auto is chosen again.",
+          "thermostat_override_minutes": "Hold time of a target set by hand (with “fixed time”)."
         }
       }
     },
@@ -171,6 +175,13 @@
       "options": {
         "stable": "Stable",
         "beta": "Beta (pre-releases)"
+      }
+    },
+    "thermostat_override": {
+      "options": {
+        "next_switch": "Until the next switch point",
+        "duration": "For a fixed time",
+        "mode_change": "Until the mode changes"
       }
     },
     "thermostat_mode": {

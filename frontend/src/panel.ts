@@ -14,6 +14,7 @@ import {
   mdiClose,
   mdiCogs,
   mdiDownloadCircleOutline,
+  mdiThermostat,
   mdiTune,
 } from "@mdi/js";
 import { mdiShellyElevateDisplay, registerIcons } from "./icons";
@@ -28,6 +29,7 @@ import "./tabs/displays";
 import "./tabs/install";
 import "./tabs/settings";
 import "./tabs/speakers";
+import "./tabs/thermostat";
 import "./tabs/profiles";
 import "./tabs/backups";
 
@@ -38,6 +40,7 @@ const TABS: { id: TabId; label: string; icon: string }[] = [
   { id: "displays", label: "Displays", icon: mdiShellyElevateDisplay },
   { id: "install", label: "Install", icon: mdiDownloadCircleOutline },
   { id: "settings", label: "Settings", icon: mdiTune },
+  { id: "thermostat", label: "Thermostat", icon: mdiThermostat },
   { id: "speakers", label: "Speakers", icon: mdiAccountVoice },
   { id: "profiles", label: "Profiles", icon: mdiCogs },
   { id: "backups", label: "Backups", icon: mdiBackupRestore },
@@ -272,6 +275,14 @@ class ShellyElevatePanel extends LitElement {
           .entryId=${this._entryId}
           ?narrow=${this.narrow}
         ></sep-settings-tab>`;
+      case "thermostat":
+        return html`<sep-thermostat-tab
+          .page=${page}
+          .api=${this._api}
+          .devices=${this._devices}
+          .entryId=${this._entryId}
+          ?narrow=${this.narrow}
+        ></sep-thermostat-tab>`;
       case "speakers":
         return html`<sep-speakers-tab
           .page=${page}
