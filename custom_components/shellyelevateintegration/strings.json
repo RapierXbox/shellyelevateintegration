@@ -670,6 +670,15 @@
     },
     "unknown_speaker": {
       "message": "The speaker is not on the source display."
+    },
+    "apk_not_found": {
+      "message": "No APK file at {path}."
+    },
+    "apk_path_not_allowed": {
+      "message": "{path} is outside the config folder and the allowed folders."
+    },
+    "apk_checksum_mismatch": {
+      "message": "The checksum of the APK file does not match."
     }
   },
   "services": {
@@ -888,6 +897,24 @@
         "version": {
           "name": "Version",
           "description": "Specific version; latest if empty."
+        }
+      }
+    },
+    "install_apk": {
+      "name": "Install APK",
+      "description": "Installs (or updates) another Android app from an APK file in the Home Assistant config folder over ADB, e.g. a dashboard app that ShellyElevate shows.",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Target display."
+        },
+        "path": {
+          "name": "File",
+          "description": "APK file, relative to the config folder or an allowed folder."
+        },
+        "sha256": {
+          "name": "SHA-256",
+          "description": "Optional checksum of the file."
         }
       }
     },

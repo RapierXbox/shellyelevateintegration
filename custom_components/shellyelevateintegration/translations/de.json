@@ -670,6 +670,15 @@
     },
     "unknown_speaker": {
       "message": "Der Sprecher ist auf dem Quell-Display nicht vorhanden."
+    },
+    "apk_not_found": {
+      "message": "Keine APK-Datei unter {path}."
+    },
+    "apk_path_not_allowed": {
+      "message": "{path} liegt außerhalb des Konfigurationsordners und der erlaubten Ordner."
+    },
+    "apk_checksum_mismatch": {
+      "message": "Die Prüfsumme der APK-Datei passt nicht."
     }
   },
   "services": {
@@ -888,6 +897,24 @@
         "version": {
           "name": "Version",
           "description": "Bestimmte Version; bei leerem Feld die neueste."
+        }
+      }
+    },
+    "install_apk": {
+      "name": "APK installieren",
+      "description": "Installiert (oder aktualisiert) eine andere Android-App aus einer APK-Datei im Konfigurationsordner von Home Assistant über ADB, z. B. eine Dashboard-App, die ShellyElevate anzeigt.",
+      "fields": {
+        "device_id": {
+          "name": "Display",
+          "description": "Ziel-Display."
+        },
+        "path": {
+          "name": "Datei",
+          "description": "APK-Datei, relativ zum Konfigurationsordner oder in einem erlaubten Ordner."
+        },
+        "sha256": {
+          "name": "SHA-256",
+          "description": "Optionale Prüfsumme der Datei."
         }
       }
     },
