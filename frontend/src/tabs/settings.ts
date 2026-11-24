@@ -6,6 +6,7 @@ import {
   type SettingDef,
   type Settings,
   type SettingsGetResult,
+  type WakeWordModel,
   deviceName,
   errorMessage,
   isLoaded,
@@ -66,7 +67,10 @@ const KEYS_MODE_OPTIONS = [
 ];
 
 type KeysMode = "all" | "selected";
-type Dialog = "" | "export" | "copy" | "profile";
+type Dialog = "" | "export" | "copy" | "profile" | "wakeword";
+
+/** rows the download dialog renders at once; a search narrows the rest */
+const WAKE_WORD_ROWS = 60;
 
 interface DialogContent {
   title: string;
@@ -98,6 +102,9 @@ export class SeSettingsTab extends LitElement {
     _profileName: { state: true },
     _profileDefault: { state: true },
     _dialogBusy: { state: true },
+    _wakeModels: { state: true },
+    _wakeFilter: { state: true },
+    _wakeError: { state: true },
   };
 
   declare page: PageContext;
@@ -123,6 +130,10 @@ export class SeSettingsTab extends LitElement {
   declare _profileName: string;
   declare _profileDefault: boolean;
   declare _dialogBusy: boolean;
+  /** Downloadable wake words; null while they load. */
+  declare _wakeModels: WakeWordModel[] | null;
+  declare _wakeFilter: string;
+  declare _wakeError: string;
 
   /** entry id the current data belongs to */
   private _loadedFor = "";
@@ -155,6 +166,9 @@ export class SeSettingsTab extends LitElement {
     this._profileName = "";
     this._profileDefault = false;
     this._dialogBusy = false;
+    this._wakeModels = null;
+    this._wakeFilter = "";
+    this._wakeError = "";
   }
 
   connectedCallback(): void {
@@ -483,7 +497,72 @@ export class SeSettingsTab extends LitElement {
     });
     if (def.key !== WAKE_MODEL_KEY) return control;
     return html`${control}
+      <ha-button appearance="plain" size="s" .disabled=${disabled} @click=${this._openWakeWords}>Download…</ha-button>
       <ha-button appearance="plain" size="s" .disabled=${disabled} @click=${this._uploadWakeWord}>Upload…</ha-button>`;
+  }
+
+  /** The download dialog; the list comes from Home Assistant, which fetches it from GitHub (cached for an hour). */
+  private _openWakeWords = async (): Promise<void> => {
+    this._wakeModels = null;
+    this._wakeFilter = "";
+    this._wakeError = "";
+    this._openDialog("wakeword");
+    try {
+      this._wakeModels = await this.api.wakeWordCatalog(this.entryId);
+    } catch (err) {
+      this._wakeError = errorMessage(err);
+      this._wakeModels = [];
+    }
+  };
+
+  private async _downloadWakeWord(model: WakeWordModel): Promise<void> {
+    await this._runDialogAction(`Downloading ${model.phrase} failed`, async () => {
+      await this.api.wakeWordInstall(this.entryId, model);
+      toast(this, `${model.phrase} downloaded to the display and selected`, "success");
+    });
+    await this._load();
+  }
+
+  private _wakeWordDialog(busy: boolean): DialogContent {
+    const f = this._wakeFilter.trim().toLowerCase();
+    const all = this._wakeModels ?? [];
+    // installed first, then the rest by name
+    const matches = all
+      .filter((m) => !f || m.phrase.toLowerCase().includes(f) || m.stem.includes(f))
+      .sort((a, b) => Number(b.installed) - Number(a.installed) || a.phrase.localeCompare(b.phrase));
+    const shown = matches.slice(0, WAKE_WORD_ROWS);
+    const rows = shown.map(
+      (m) => html`<ha-list-item-base>
+        <span slot="headline">${m.phrase}</span>
+        <span slot="supporting-text">${m.source === "official" ? "ESPHome" : "Community"} · ${m.path}</span>
+        <div slot="end" class="end">
+          ${m.installed
+            ? html`<span class="file-name">Installed</span>`
+            : html`<ha-button appearance="plain" size="s" ?disabled=${busy} @click=${() => this._downloadWakeWord(m)}
+                >Download</ha-button
+              >`}
+        </div>
+      </ha-list-item-base>`,
+    );
+    return {
+      title: "Download a wake word",
+      body: html`<div class="stack">
+        <ha-input
+          .placeholder=${`Search ${plural(all.length, "wake word")}`}
+          .value=${this._wakeFilter}
+          @input=${(e: Event) => (this._wakeFilter = inputValue(e))}
+        ></ha-input>
+        ${this._wakeError ? html`<ha-alert alert-type="error">${this._wakeError}</ha-alert>` : nothing}
+        ${this._wakeModels === null
+          ? html`<div class="loading"><ha-spinner></ha-spinner></div>`
+          : html`<ha-list-base class="rows">${rows}</ha-list-base>
+              ${matches.length > shown.length
+                ? html`<div class="secondary">${plural(matches.length - shown.length, "more wake word")}: search to narrow the list.</div>`
+                : nothing}`}
+      </div>`,
+      // closing is the dialog's Cancel button; each row downloads on its own
+      primary: html``,
+    };
   }
 
   /** A microWakeWord model (.tflite, optionally with its .json) installed on this display and used right away. */
@@ -865,6 +944,8 @@ export class SeSettingsTab extends LitElement {
         return this._copyDialog(busy, keysOk);
       case "profile":
         return this._profileDialog(busy, keysOk);
+      case "wakeword":
+        return this._wakeWordDialog(busy);
       default:
         return null;
     }

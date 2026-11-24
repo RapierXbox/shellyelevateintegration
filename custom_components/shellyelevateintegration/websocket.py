@@ -17,6 +17,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 import voluptuous as vol
 
+from . import wake_words
 from .adb.apk import async_get_releases
 from .api import SettingDef, ShellyElevateIntegrationError
 from .api.app_schema import APP_RULES, app_schema
@@ -293,6 +294,35 @@ async def ws_command(hass: HomeAssistant, connection: ActiveConnection, msg: dic
         return {"ok": True, "data": await device.async_command(msg["action"], **msg["params"])}
 
     return await _each(hass, msg["entry_ids"], run)
+
+
+# --------------------------------------------------------------------------- wake words
+
+
+@_cmd({vol.Required("type"): f"{DOMAIN}/wake_words/catalog", vol.Required("entry_id"): str})
+async def ws_wake_words_catalog(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Wake words the display can download, marked when it already has one with the same phrase."""
+    device = _device(hass, msg["entry_id"])
+    installed = (device.client.voice_config or {}).get("available") or []
+    return {"models": wake_words.catalog_as_list(await wake_words.async_get_catalog(hass), installed)}
+
+
+@_cmd(
+    {
+        vol.Required("type"): f"{DOMAIN}/wake_words/install",
+        vol.Required("entry_id"): str,
+        vol.Required("source"): vol.In(list(wake_words.SOURCES)),
+        vol.Required("path"): str,
+    }
+)
+async def ws_wake_words_install(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Download a wake word from the catalog to the display and use it."""
+    device = _device(hass, msg["entry_id"])
+    return {"id": await wake_words.async_install(hass, device, msg["source"], msg["path"])}
 
 
 # --------------------------------------------------------------------------- speakers
@@ -723,6 +753,8 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
         ws_export,
         ws_copy,
         ws_command,
+        ws_wake_words_catalog,
+        ws_wake_words_install,
         ws_speakers_subscribe,
         ws_speakers_copy,
         ws_ha_login_config,

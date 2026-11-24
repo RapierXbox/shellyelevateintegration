@@ -679,6 +679,15 @@
     },
     "apk_checksum_mismatch": {
       "message": "Die Prüfsumme der APK-Datei passt nicht."
+    },
+    "wake_word_list_failed": {
+      "message": "Die Liste der Aktivierungswörter konnte nicht von GitHub abgerufen werden: {error}"
+    },
+    "wake_word_unknown": {
+      "message": "{model} ist nicht in der Liste der Aktivierungswörter"
+    },
+    "wake_word_download_failed": {
+      "message": "Das Aktivierungswort {model} konnte nicht heruntergeladen werden: {error}"
     }
   },
   "services": {
