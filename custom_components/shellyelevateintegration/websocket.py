@@ -104,10 +104,23 @@ def _managed_settings(device: ShellyElevateIntegrationDevice, keys: set[str]) ->
     else:
         managed["integrationApiEnabled"] = "Turning it off disconnects this display from Home Assistant"
     if device.voice_enabled:
-        reason = "Set by the wake word of the Assist satellite in Home Assistant"
-        managed["voiceWakeEnabled"] = reason
-        managed["voiceWakeModelName"] = reason
+        # the wake word itself stays editable: the panel offers the installed ones and the display reports a change back
+        managed["voiceWakeEnabled"] = "Set by the wake word of the Assist satellite in Home Assistant"
     return {key: reason for key, reason in managed.items() if key in keys}
+
+
+def _wake_word_choices(device: ShellyElevateIntegrationDevice, schema: list[dict[str, Any]]) -> None:
+    """Turn the wake word model into a dropdown of the models installed on the display."""
+    available = (device.client.voice_config or {}).get("available") or []
+    if not available:
+        return
+    options = [{"value": ww["id"], "label": ww.get("phrase") or ww["id"]} for ww in available if ww.get("id")]
+    current = device.settings.get("voiceWakeModelName")
+    if current and all(opt["value"] != current for opt in options):
+        options.append({"value": current, "label": f"{current} (not installed)"})
+    for item in schema:
+        if item.get("key") == "voiceWakeModelName":
+            item.update(type="enum", options=options)
 
 
 def _command(schema: dict[Any, Any]) -> Callable[[WebSocketCommandHandler], WebSocketCommandHandler]:
@@ -188,9 +201,11 @@ async def ws_settings_get(hass: HomeAssistant, connection: ActiveConnection, msg
         for k, v in device.settings.items()
         if k not in known and k not in REMOVED_KEYS
     ]
+    schema_out = [item.as_dict() for item in rules or ()] + extra
+    _wake_word_choices(device, schema_out)
     return {
         "settings": device.settings,
-        "schema": [item.as_dict() for item in rules or ()] + extra,
+        "schema": schema_out,
         "per_device": sorted(schema_util.per_device_keys(schema)),
         "secret": sorted(schema_util.secret_keys(schema)),
         "capabilities": device.capabilities,

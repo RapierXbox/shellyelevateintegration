@@ -22,7 +22,18 @@ import {
 } from "../ha";
 import { type PageContext, type PageMenu, displayPicker, noDisplaysCard, pageStyles, renderPage } from "../page";
 import { dialogStyles, sharedStyles } from "../styles";
-import { confirmDialog, define, downloadJson, plural, selectEntry, slug, toast, toastError } from "../ui";
+import {
+  confirmDialog,
+  define,
+  downloadJson,
+  fileBase64,
+  pickFiles,
+  plural,
+  selectEntry,
+  slug,
+  toast,
+  toastError,
+} from "../ui";
 import {
   categoryLabel,
   categoryRank,
@@ -36,6 +47,11 @@ import {
 import type { KeyOption } from "../components/key-picker";
 import "../components/key-picker";
 import { type Visibility, VisibilityEvaluator, visibilityHint } from "../visibility";
+
+/** The wake word model: a dropdown of the installed models with an upload next to it. */
+const WAKE_MODEL_KEY = "voiceWakeModelName";
+/** what the display takes per wake word file */
+const MAX_WAKE_WORD_BYTES = 2 * 1024 * 1024;
 
 /** Categories shown as collapsed cards after the others. */
 const COLLAPSED: Record<string, { header: string; secondary: string }> = {
@@ -456,7 +472,7 @@ export class SeSettingsTab extends LitElement {
     // read-only while the settings are (re)loaded: edits would be dropped by the load
     const disabled = this._loading || locked;
     if (def.accept) return this._renderFile(def, String(value ?? ""), disabled);
-    return renderSettingControl(def, {
+    const control = renderSettingControl(def, {
       value,
       text: this._text[def.key],
       invalid: this._invalid.has(def.key),
@@ -465,7 +481,40 @@ export class SeSettingsTab extends LitElement {
       onValue: (v) => this._setValue(def.key, v),
       onText: (t) => this._setText(def, t),
     });
+    if (def.key !== WAKE_MODEL_KEY) return control;
+    return html`${control}
+      <ha-button appearance="plain" size="s" .disabled=${disabled} @click=${this._uploadWakeWord}>Upload…</ha-button>`;
   }
+
+  /** A microWakeWord model (.tflite, optionally with its .json) installed on this display and used right away. */
+  private _uploadWakeWord = async (): Promise<void> => {
+    const files = await pickFiles(".tflite,.json");
+    const tflite = files.find((f) => f.name.toLowerCase().endsWith(".tflite"));
+    const json = files.find((f) => f.name.toLowerCase().endsWith(".json"));
+    if (!tflite) {
+      if (files.length) toast(this, "Pick the .tflite file of the wake word (and its .json)", "error");
+      return;
+    }
+    if (files.some((f) => f.size > MAX_WAKE_WORD_BYTES)) {
+      toast(this, "A wake word file is larger than 2 MB", "error");
+      return;
+    }
+    try {
+      const result = (
+        await this.api.command([this.entryId], "voice.wake_word_upload", {
+          name: tflite.name,
+          tflite_b64: await fileBase64(tflite),
+          json_b64: json ? await fileBase64(json) : null,
+          activate: true,
+        })
+      )[this.entryId];
+      if (result?.ok) toast(this, `Wake word ${tflite.name} installed and selected`, "success");
+      else toast(this, "Wake word upload failed", "error", [result?.error ?? "no answer from the display"]);
+    } catch (err) {
+      toastError(this, "Wake word upload failed", err);
+    }
+    await this._load();
+  };
 
   /** One setting as a list row (headline, supporting text, control at the end) like Backup → Settings. */
   private _renderField(def: SettingDef, vis: Visibility, ev: VisibilityEvaluator) {

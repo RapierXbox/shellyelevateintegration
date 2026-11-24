@@ -194,20 +194,24 @@ export const fileMatches = (file: File, accept: string): boolean => {
 };
 
 /** Let the user pick a file; resolves with null when cancelled. */
-export const pickFile = (accept: string): Promise<File | null> =>
+export const pickFile = async (accept: string): Promise<File | null> => (await pickFiles(accept, false))[0] ?? null;
+
+/** Let the user pick files; resolves with none when cancelled. */
+export const pickFiles = (accept: string, multiple = true): Promise<File[]> =>
   new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = acceptFilter(accept);
+    input.multiple = multiple;
     // mobile browsers may drop the change event of an input outside the document
     input.style.display = "none";
     document.body.appendChild(input);
-    const done = (file: File | null) => {
+    const done = (files: File[]) => {
       input.remove();
-      resolve(file);
+      resolve(files);
     };
-    input.addEventListener("change", () => done(input.files?.[0] ?? null), { once: true });
-    input.addEventListener("cancel", () => done(null), { once: true });
+    input.addEventListener("change", () => done([...(input.files ?? [])]), { once: true });
+    input.addEventListener("cancel", () => done([]), { once: true });
     input.click();
   });
 
