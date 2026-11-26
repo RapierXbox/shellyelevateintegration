@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from homeassistant.components.number import NumberEntity, NumberEntityDescription, NumberMode
-from homeassistant.const import EntityCategory, UnitOfTime
+from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -76,6 +76,7 @@ NUMBERS: tuple[ShellyElevateIntegrationNumberDescription, ...] = (
     # 0..100 on v1 and a 0..1 float on the legacy app (from its schema)
     _num("wake_word_sensitivity", "voiceWakeSensitivity", 0, 100, 1, enabled=False),
     _num("voice_max_record", "voiceAssistantMaxRecordSeconds", 1, 60, 1, UnitOfTime.SECONDS, enabled=False),
+    _num("voice_bubble_scale", "voiceBubbleScale", 100, 300, 10, PERCENTAGE),
 )
 
 
