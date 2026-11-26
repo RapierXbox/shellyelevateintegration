@@ -679,6 +679,15 @@
     },
     "apk_checksum_mismatch": {
       "message": "The checksum of the APK file does not match."
+    },
+    "wake_word_list_failed": {
+      "message": "Could not fetch the wake word list from GitHub: {error}"
+    },
+    "wake_word_unknown": {
+      "message": "{model} is not in the wake word list"
+    },
+    "wake_word_download_failed": {
+      "message": "Could not download the wake word {model}: {error}"
     }
   },
   "services": {

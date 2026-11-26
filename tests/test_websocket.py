@@ -72,8 +72,25 @@ async def test_settings_get(hass: HomeAssistant, init_integration: MockConfigEnt
     assert result["managed"] == {
         "integrationApiEnabled": "Turning it off disconnects this display from Home Assistant",
         "voiceWakeEnabled": "Set by the wake word of the Assist satellite in Home Assistant",
-        "voiceWakeModelName": "Set by the wake word of the Assist satellite in Home Assistant",
     }
+
+
+async def test_settings_get_wake_word_dropdown(
+    hass: HomeAssistant, init_integration: MockConfigEntry, display: FakeDisplay, ws
+) -> None:
+    """The wake word model lists the models installed on the display, plus a selected one that is missing."""
+    display.settings["voiceWakeModelName"] = "hey_jarvis"
+    init_integration.runtime_data.client.voice_config = {
+        "available": [{"id": "okay_nabu", "phrase": "Okay Nabu"}, {"id": "hey_glados", "phrase": "Hey Glados"}]
+    }
+    result = (await ws("settings/get", entry_id=init_integration.entry_id))["result"]
+    model = next(item for item in result["schema"] if item["key"] == "voiceWakeModelName")
+    assert model["type"] == "enum"
+    assert model["options"] == [
+        {"value": "okay_nabu", "label": "Okay Nabu"},
+        {"value": "hey_glados", "label": "Hey Glados"},
+        {"value": "hey_jarvis", "label": "hey_jarvis (not installed)"},
+    ]
 
 
 async def test_settings_get_without_schema(

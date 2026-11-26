@@ -113,6 +113,18 @@ export interface SettingDef {
 
 export type Settings = Record<string, unknown>;
 
+/** A wake word Home Assistant can download to a display. */
+export interface WakeWordModel {
+  /** "official" (ESPHome) or "community" */
+  source: string;
+  path: string;
+  stem: string;
+  phrase: string;
+  has_json: boolean;
+  /** The display already has a wake word with this phrase. */
+  installed: boolean;
+}
+
 export interface SettingsGetResult {
   settings: Settings;
   schema: SettingDef[];
@@ -418,6 +430,17 @@ export class ElevateApi {
     return (
       await this.ws<{ results: Record<string, CommandResult> }>("command", { entry_ids: entryIds, action, params })
     ).results;
+  }
+
+  // wake words: Home Assistant downloads them from GitHub and sends them to the display
+  async wakeWordCatalog(entryId: string): Promise<WakeWordModel[]> {
+    return (await this.ws<{ models: WakeWordModel[] }>("wake_words/catalog", { entry_id: entryId })).models;
+  }
+
+  async wakeWordInstall(entryId: string, model: WakeWordModel): Promise<string> {
+    return (
+      await this.ws<{ id: string }>("wake_words/install", { entry_id: entryId, source: model.source, path: model.path })
+    ).id;
   }
 
   // speakers (the speaker.* commands of a display run through `command`)

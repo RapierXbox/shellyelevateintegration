@@ -17,6 +17,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 import voluptuous as vol
 
+from . import wake_words
 from .adb.apk import async_get_releases
 from .api import SettingDef, ShellyElevateIntegrationError
 from .api.app_schema import APP_RULES, app_schema
@@ -104,10 +105,23 @@ def _managed_settings(device: ShellyElevateIntegrationDevice, keys: set[str]) ->
     else:
         managed["integrationApiEnabled"] = "Turning it off disconnects this display from Home Assistant"
     if device.voice_enabled:
-        reason = "Set by the wake word of the Assist satellite in Home Assistant"
-        managed["voiceWakeEnabled"] = reason
-        managed["voiceWakeModelName"] = reason
+        # the wake word itself stays editable: the panel offers the installed ones and the display reports a change back
+        managed["voiceWakeEnabled"] = "Set by the wake word of the Assist satellite in Home Assistant"
     return {key: reason for key, reason in managed.items() if key in keys}
+
+
+def _wake_word_choices(device: ShellyElevateIntegrationDevice, schema: list[dict[str, Any]]) -> None:
+    """Turn the wake word model into a dropdown of the models installed on the display."""
+    available = (device.client.voice_config or {}).get("available") or []
+    if not available:
+        return
+    options = [{"value": ww["id"], "label": ww.get("phrase") or ww["id"]} for ww in available if ww.get("id")]
+    current = device.settings.get("voiceWakeModelName")
+    if current and all(opt["value"] != current for opt in options):
+        options.append({"value": current, "label": f"{current} (not installed)"})
+    for item in schema:
+        if item.get("key") == "voiceWakeModelName":
+            item.update(type="enum", options=options)
 
 
 def _command(schema: dict[Any, Any]) -> Callable[[WebSocketCommandHandler], WebSocketCommandHandler]:
@@ -188,9 +202,11 @@ async def ws_settings_get(hass: HomeAssistant, connection: ActiveConnection, msg
         for k, v in device.settings.items()
         if k not in known and k not in REMOVED_KEYS
     ]
+    schema_out = [item.as_dict() for item in rules or ()] + extra
+    _wake_word_choices(device, schema_out)
     return {
         "settings": device.settings,
-        "schema": [item.as_dict() for item in rules or ()] + extra,
+        "schema": schema_out,
         "per_device": sorted(schema_util.per_device_keys(schema)),
         "secret": sorted(schema_util.secret_keys(schema)),
         "capabilities": device.capabilities,
@@ -278,6 +294,35 @@ async def ws_command(hass: HomeAssistant, connection: ActiveConnection, msg: dic
         return {"ok": True, "data": await device.async_command(msg["action"], **msg["params"])}
 
     return await _each(hass, msg["entry_ids"], run)
+
+
+# --------------------------------------------------------------------------- wake words
+
+
+@_cmd({vol.Required("type"): f"{DOMAIN}/wake_words/catalog", vol.Required("entry_id"): str})
+async def ws_wake_words_catalog(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Wake words the display can download, marked when it already has one with the same phrase."""
+    device = _device(hass, msg["entry_id"])
+    installed = (device.client.voice_config or {}).get("available") or []
+    return {"models": wake_words.catalog_as_list(await wake_words.async_get_catalog(hass), installed)}
+
+
+@_cmd(
+    {
+        vol.Required("type"): f"{DOMAIN}/wake_words/install",
+        vol.Required("entry_id"): str,
+        vol.Required("source"): vol.In(list(wake_words.SOURCES)),
+        vol.Required("path"): str,
+    }
+)
+async def ws_wake_words_install(
+    hass: HomeAssistant, connection: ActiveConnection, msg: dict[str, Any]
+) -> dict[str, Any]:
+    """Download a wake word from the catalog to the display and use it."""
+    device = _device(hass, msg["entry_id"])
+    return {"id": await wake_words.async_install(hass, device, msg["source"], msg["path"])}
 
 
 # --------------------------------------------------------------------------- speakers
@@ -708,6 +753,8 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
         ws_export,
         ws_copy,
         ws_command,
+        ws_wake_words_catalog,
+        ws_wake_words_install,
         ws_speakers_subscribe,
         ws_speakers_copy,
         ws_ha_login_config,
